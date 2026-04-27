@@ -1,0 +1,1818 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Industry {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  key       String   @unique
+  icon      String
+  color     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  modules        Module[]
+  organizations  Organization[]
+  roles          Role[]
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  industryId  String
+  name        String
+  key         String   @unique
+  icon        String
+  color       String
+  isCore      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  industry           Industry                @relation(fields: [industryId], references: [id])
+  organizationModules OrganizationModule[]
+  userRoles          UserRoleAssignment[]
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  email     String
+  phone     String?
+  orgCode   String   @unique
+  industryId String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  industry            Industry              @relation(fields: [industryId], references: [id])
+  settings            OrganizationSettings?
+  users               User[]
+  modules             OrganizationModule[]
+  branches            Branch[]
+  suppliers           Supplier[]
+  inventoryCategories InventoryCategory[]
+  inventoryItems      InventoryItem[]
+  stockMovements      StockMovement[]
+  lowStockAlerts      LowStockAlert[]
+  purchaseRequests    PurchaseRequest[]
+  purchaseOrders      PurchaseOrder[]
+  goodsReceiptNotes   GoodsReceiptNote[]
+  reorderSuggestions  ReorderSuggestion[]
+  supplierPriceHistory SupplierPriceHistory[]
+  supplierPerformance SupplierPerformance[]
+  supplierOrderHistory SupplierOrderHistory[]
+  supplierDeliveries  SupplierDelivery[]
+  interBranchDeliveries InterBranchDelivery[]
+  deliveryAlerts      DeliveryAlert[]
+  deliveryCalendars   DeliveryCalendar[]
+  priceTrends         PriceTrend[]
+  demandForecasts     DemandForecast[]
+  stockoutRisks       StockoutRisk[]
+  wastageRecords      WastageRecord[]
+  bulkOrderSavings    BulkOrderSaving[]
+  spendingAnomalies   SpendingAnomaly[]
+  co2Emissions        CO2Emission[]
+  localSupplierScores LocalSupplierScore[]
+  packagingWastes     PackagingWaste[]
+  wasteReductionSuggestions WasteReductionSuggestion[]
+  medicalInventory    MedicalInventory[]
+  coldChainLogs       ColdChainLog[]
+  expiryAlerts        ExpiryAlert[]
+  emergencyReorders   EmergencyReorder[]
+  bookInventory       BookInventory[]
+  bookDistributions   BookDistribution[]
+  stationeryItems     StationeryItem[]
+  uniformItems        UniformItem[]
+  cafeteriaSupplies   CafeteriaSupply[]
+  mealConsumptions    MealConsumption[]
+  hostelSupplies      HostelSupply[]
+  roomAllocations     RoomAllocation[]
+  retailProducts      RetailProduct[]
+  retailSales         RetailSale[]
+  retailTransfers     RetailTransfer[]
+  reorderEngines      ReorderEngine[]
+  promotions          Promotion[]
+  loyaltyCustomers    LoyaltyCustomer[]
+  loyaltyTransactions LoyaltyTransaction[]
+  
+  // Manufacturing relations
+  rawMaterials        RawMaterial[]
+  rawMaterialMovements RawMaterialMovement[]
+  productionInputs    ProductionInput[]
+  workOrders          WorkOrder[]
+  finishedGoodsOutputs FinishedGoodsOutput[]
+  finishedGoods       FinishedGoods[]
+  dispatches          Dispatch[]
+  dispatchItems       DispatchItem[]
+  
+  // Logistics & Transport relations
+  vehicles            Vehicle[]
+  transportRoutes     TransportRoute[]
+  schedules           Schedule[]
+  drivers             Driver[]
+  driverAssignments   DriverAssignment[]
+  trips               Trip[]
+  tripPayments        TripPayment[]
+  fuelLogs            FuelLog[]
+  fuelEfficiencies    FuelEfficiency[]
+  maintenanceRecords  MaintenanceRecord[]
+  trafficData         TrafficData[]
+}
+
+model OrganizationModule {
+  id             String       @id @default(cuid())
+  organizationId String
+  moduleId       String
+  isEnabled      Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  module         Module       @relation(fields: [moduleId], references: [id])
+  
+  @@unique([organizationId, moduleId])
+}
+
+model OrganizationSettings {
+  id                    String            @id @default(cuid())
+  organizationId        String            @unique
+  currency              String            @default("KES")
+  currencySymbol        String            @default("KSh")
+  timezone              String            @default("Africa/Nairobi")
+  dateFormat            String            @default("DD/MM/YYYY")
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  
+  organization          Organization      @relation(fields: [organizationId], references: [id])
+}
+
+model User {
+  id             String   @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String   @unique
+  phone          String?
+  orgCode        String
+  loginCode      String
+  organizationId String
+  legacyRole     LegacyUserRole @default(STAFF)
+  isActive       Boolean  @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization          @relation(fields: [organizationId], references: [id])
+  userRoles      UserRoleAssignment[]
+  managedBranches Branch[]             @relation("BranchManager")
+  branchStaff    BranchStaff[]
+}
+
+enum LegacyUserRole {
+  SUPER_ADMIN
+  ORG_ADMIN
+  MANAGER
+  STAFF
+}
+
+// ==================== RBAC MODELS ====================
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  description String?
+  industryId  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  industry    Industry              @relation(fields: [industryId], references: [id])
+  permissions RolePermission[]
+  userRoles   UserRoleAssignment[]
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  moduleKey   String
+  action      String
+  resource    String?
+  description String?
+  createdAt   DateTime @default(now())
+  
+  rolePermissions RolePermission[]
+  
+  @@unique([moduleKey, action, resource])
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  
+  @@unique([roleId, permissionId])
+}
+
+model UserRoleAssignment {
+  id         String   @id @default(cuid())
+  userId     String
+  roleId     String
+  moduleId   String?
+  createdAt  DateTime @default(now())
+  
+  user       User     @relation(fields: [userId], references: [id])
+  role       Role     @relation(fields: [roleId], references: [id])
+  module     Module?  @relation(fields: [moduleId], references: [id])
+  
+  @@unique([userId, roleId, moduleId])
+  @@map("user_roles")
+}
+
+// ==================== MULTI-BRANCH MODELS ====================
+
+model Branch {
+  id             String         @id @default(cuid())
+  name           String
+  code           String         @unique
+  organizationId String
+  address        String?
+  phone          String?
+  email          String?
+  managerId      String?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  manager        User?          @relation("BranchManager", fields: [managerId], references: [id])
+  inventory      BranchInventory[]
+  procurement    BranchProcurement[]
+  deliveries     BranchDelivery[]
+  staff          BranchStaff[]
+  branchStock    BranchStock[]
+  stockMovements StockMovement[]
+  lowStockAlerts LowStockAlert[]
+  reorderSuggestions ReorderSuggestion[]
+  fromDeliveries InterBranchDelivery[] @relation("FromBranch")
+  toDeliveries   InterBranchDelivery[] @relation("ToBranch")
+  demandForecasts DemandForecast[]
+  stockoutRisks  StockoutRisk[]
+  wastageRecords WastageRecord[]
+  retailBranchStock RetailBranchStock[]
+  retailSales     RetailSale[]
+  fromTransfers   RetailTransfer[] @relation("FromBranchTransfer")
+  toTransfers     RetailTransfer[] @relation("ToBranchTransfer")
+  reorderEngines  ReorderEngine[]
+  
+  // Manufacturing relations
+  rawMaterialMovements RawMaterialMovement[]
+  rawMaterialBranchStock RawMaterialBranchStock[]
+  finishedGoodsBranchStock FinishedGoodsBranchStock[]
+  
+  @@unique([organizationId, code])
+}
+
+model BranchInventory {
+  id             String         @id @default(cuid())
+  branchId       String
+  itemId         String
+  currentStock   Float
+  minimumStock   Float
+  maximumStock   Float
+  reorderPoint   Float
+  updatedAt      DateTime       @updatedAt
+  
+  branch         Branch         @relation(fields: [branchId], references: [id])
+  
+  @@unique([branchId, itemId])
+}
+
+model BranchProcurement {
+  id              String         @id @default(cuid())
+  branchId        String
+  purchaseOrderId String
+  status          String
+  createdAt       DateTime       @default(now())
+  
+  branch          Branch         @relation(fields: [branchId], references: [id])
+}
+
+model BranchDelivery {
+  id             String         @id @default(cuid())
+  branchId       String
+  deliveryId     String
+  status         String
+  receivedAt     DateTime?
+  
+  branch         Branch         @relation(fields: [branchId], references: [id])
+}
+
+model BranchStaff {
+  id             String         @id @default(cuid())
+  branchId       String
+  userId         String
+  role           String
+  assignedAt     DateTime       @default(now())
+  
+  branch         Branch         @relation(fields: [branchId], references: [id])
+  user           User           @relation(fields: [userId], references: [id])
+  
+  @@unique([branchId, userId])
+}
+
+// ==================== SUPPLIER MODELS ====================
+
+model Supplier {
+  id             String         @id @default(cuid())
+  name           String
+  code           String         @unique
+  contactPerson  String?
+  email          String?
+  phone          String?
+  address        String?
+  taxId          String?
+  paymentTerms   String?
+  leadTime       Int?
+  rating         Float          @default(0)
+  isActive       Boolean        @default(true)
+  organizationId String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  items          InventoryItem[]
+  purchaseOrders PurchaseOrder[]
+  priceHistory   SupplierPriceHistory[]
+  performance    SupplierPerformance[]
+  orderHistory   SupplierOrderHistory[]
+  deliveries     SupplierDelivery[]
+  priceTrends    PriceTrend[]
+  bulkOrderSavings BulkOrderSaving[]
+  spendingAnomalies SpendingAnomaly[]
+  localSupplierScores LocalSupplierScore[]
+  medicalInventory MedicalInventory[]
+  bookInventory   BookInventory[]
+  stationeryItems StationeryItem[]
+  uniformItems    UniformItem[]
+  cafeteriaSupplies CafeteriaSupply[]
+  hostelSupplies  HostelSupply[]
+  retailProducts  RetailProduct[]
+  rawMaterials    RawMaterial[]
+  
+  @@unique([organizationId, code])
+}
+
+// ==================== HOSPITALITY INVENTORY MODELS ====================
+
+model InventoryCategory {
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  color          String?
+  icon           String?
+  organizationId String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  items          InventoryItem[]
+}
+
+model InventoryItem {
+  id             String            @id @default(cuid())
+  name           String
+  sku            String            @unique
+  barcode        String?
+  description    String?
+  categoryId     String
+  unit           String
+  currentStock   Float             @default(0)
+  minimumStock   Float             @default(0)
+  maximumStock   Float             @default(0)
+  reorderPoint   Float             @default(0)
+  costPrice      Float             @default(0)
+  sellingPrice   Float             @default(0)
+  location       String?
+  supplierId     String?
+  imageUrl       String?
+  isActive       Boolean           @default(true)
+  organizationId String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  
+  category       InventoryCategory @relation(fields: [categoryId], references: [id])
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  supplier       Supplier?         @relation(fields: [supplierId], references: [id])
+  movements      StockMovement[]
+  branchStock    BranchStock[]
+  lowStockAlerts LowStockAlert[]
+  reorderSuggestions ReorderSuggestion[]
+  priceHistory   SupplierPriceHistory[]
+  priceTrends    PriceTrend[]
+  demandForecasts DemandForecast[]
+  stockoutRisks  StockoutRisk[]
+  wastageRecords WastageRecord[]
+  bulkOrderSavings BulkOrderSaving[]
+  spendingAnomalies SpendingAnomaly[]
+  packagingWastes PackagingWaste[]
+}
+
+model StockMovement {
+  id             String         @id @default(cuid())
+  itemId         String
+  branchId       String?
+  quantity       Float
+  type           MovementType
+  reference      String?
+  previousStock  Float
+  newStock       Float
+  notes          String?
+  createdBy      String
+  organizationId String
+  createdAt      DateTime       @default(now())
+  
+  item           InventoryItem  @relation(fields: [itemId], references: [id])
+  branch         Branch?        @relation(fields: [branchId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+}
+
+enum MovementType {
+  RECEIVE
+  ISSUE
+  ADJUST
+  TRANSFER_IN
+  TRANSFER_OUT
+  RETURN
+  WASTAGE
+}
+
+model BranchStock {
+  id             String         @id @default(cuid())
+  branchId       String
+  itemId         String
+  quantity       Float          @default(0)
+  reservedStock  Float          @default(0)
+  availableStock Float          @default(0)
+  updatedAt      DateTime       @updatedAt
+  
+  branch         Branch         @relation(fields: [branchId], references: [id])
+  item           InventoryItem  @relation(fields: [itemId], references: [id])
+  
+  @@unique([branchId, itemId])
+}
+
+model LowStockAlert {
+  id             String         @id @default(cuid())
+  itemId         String
+  branchId       String?
+  organizationId String
+  currentStock   Float
+  reorderPoint   Float
+  status         AlertStatus    @default(PENDING)
+  notifiedAt     DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  
+  item           InventoryItem  @relation(fields: [itemId], references: [id])
+  branch         Branch?        @relation(fields: [branchId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+}
+
+enum AlertStatus {
+  PENDING
+  NOTIFIED
+  RESOLVED
+  IGNORED
+}
+
+// ==================== PROCUREMENT MODELS ====================
+
+model PurchaseRequest {
+  id             String              @id @default(cuid())
+  requestNumber  String              @unique
+  title          String
+  description    String?
+  requestedBy    String
+  requestedDate  DateTime            @default(now())
+  requiredDate   DateTime
+  items          Json
+  status         RequestStatus       @default(DRAFT)
+  priority       Priority            @default(MEDIUM)
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectionReason String?
+  budgetCode     String?
+  department     String?
+  organizationId String
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  purchaseOrders PurchaseOrder[]
+}
+
+enum RequestStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  ORDERED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model PurchaseOrder {
+  id               String            @id @default(cuid())
+  poNumber         String            @unique
+  supplierId       String
+  requestId        String?
+  orderDate        DateTime          @default(now())
+  expectedDate     DateTime
+  deliveryDate     DateTime?
+  items            Json
+  subtotal         Float
+  tax              Float             @default(0)
+  discount         Float             @default(0)
+  total            Float
+  status           OrderStatus       @default(SUBMITTED)
+  notes            String?
+  approvedBy       String?
+  approvedAt       DateTime?
+  organizationId   String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  
+  supplier         Supplier          @relation(fields: [supplierId], references: [id])
+  request          PurchaseRequest?  @relation(fields: [requestId], references: [id])
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  receipts         GoodsReceiptNote[]
+  orderHistory     SupplierOrderHistory[]
+  supplierDeliveries SupplierDelivery[]
+}
+
+enum OrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  SHIPPED
+  PARTIAL
+  DELIVERED
+  CANCELLED
+  REJECTED
+}
+
+model GoodsReceiptNote {
+  id               String            @id @default(cuid())
+  grnNumber        String            @unique
+  poId             String
+  receivedDate     DateTime          @default(now())
+  items            Json
+  status           ReceiptStatus     @default(PENDING)
+  receivedBy       String
+  notes            String?
+  organizationId   String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  
+  purchaseOrder    PurchaseOrder     @relation(fields: [poId], references: [id])
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+}
+
+enum ReceiptStatus {
+  PENDING
+  COMPLETE
+  PARTIAL
+  REJECTED
+}
+
+model ReorderSuggestion {
+  id               String            @id @default(cuid())
+  itemId           String
+  branchId         String?
+  currentStock     Float
+  reorderPoint     Float
+  suggestedQty     Float
+  reason           String
+  status           SuggestionStatus  @default(PENDING)
+  createdAt        DateTime          @default(now())
+  processedAt      DateTime?
+  organizationId   String?
+  
+  item             InventoryItem     @relation(fields: [itemId], references: [id])
+  branch           Branch?           @relation(fields: [branchId], references: [id])
+  organization     Organization?     @relation(fields: [organizationId], references: [id])
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  PROCESSED
+}
+
+// ==================== SUPPLIER ENHANCEMENTS ====================
+
+model SupplierPriceHistory {
+  id             String   @id @default(cuid())
+  supplierId     String
+  itemId         String
+  previousPrice  Float
+  newPrice       Float
+  effectiveDate  DateTime @default(now())
+  notes          String?
+  createdBy      String
+  createdAt      DateTime @default(now())
+  organizationId String
+  
+  supplier       Supplier     @relation(fields: [supplierId], references: [id])
+  item           InventoryItem @relation(fields: [itemId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model SupplierPerformance {
+  id             String   @id @default(cuid())
+  supplierId     String
+  periodStart    DateTime
+  periodEnd      DateTime
+  onTimeDeliveries Int    @default(0)
+  totalDeliveries Int    @default(0)
+  onTimeRate     Float    @default(0)
+  qualityRating  Float    @default(0)
+  avgLeadTime    Float    @default(0)
+  responseTime   Float?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  supplier       Supplier     @relation(fields: [supplierId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  
+  @@unique([supplierId, periodStart])
+}
+
+model SupplierOrderHistory {
+  id             String   @id @default(cuid())
+  supplierId     String
+  poId           String
+  orderDate      DateTime
+  deliveryDate   DateTime?
+  totalAmount    Float
+  status         String
+  lateDays       Int?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  supplier       Supplier     @relation(fields: [supplierId], references: [id])
+  purchaseOrder  PurchaseOrder @relation(fields: [poId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== DELIVERY LOGISTICS MODELS ====================
+
+model SupplierDelivery {
+  id               String          @id @default(cuid())
+  deliveryNumber   String          @unique
+  poId             String
+  supplierId       String
+  expectedDate     DateTime
+  actualDate       DateTime?
+  status           DeliveryStatus  @default(SCHEDULED)
+  trackingNumber   String?
+  carrier          String?
+  notes            String?
+  delayedReason    String?
+  notifiedAt       DateTime?
+  organizationId   String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  purchaseOrder    PurchaseOrder   @relation(fields: [poId], references: [id])
+  supplier         Supplier        @relation(fields: [supplierId], references: [id])
+  organization     Organization    @relation(fields: [organizationId], references: [id])
+  alerts           DeliveryAlert[]
+  co2Emissions     CO2Emission[]
+}
+
+model InterBranchDelivery {
+  id               String          @id @default(cuid())
+  deliveryNumber   String          @unique
+  fromBranchId     String
+  toBranchId       String
+  requestNumber    String?
+  expectedDate     DateTime
+  actualDate       DateTime?
+  status           DeliveryStatus  @default(SCHEDULED)
+  items            Json
+  carrier          String?
+  driverName       String?
+  driverPhone      String?
+  vehicleNumber    String?
+  notes            String?
+  organizationId   String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  fromBranch       Branch          @relation("FromBranch", fields: [fromBranchId], references: [id])
+  toBranch         Branch          @relation("ToBranch", fields: [toBranchId], references: [id])
+  organization     Organization    @relation(fields: [organizationId], references: [id])
+  alerts           DeliveryAlert[]
+  co2Emissions     CO2Emission[]
+}
+
+enum DeliveryStatus {
+  SCHEDULED
+  PENDING
+  IN_TRANSIT
+  DELAYED
+  PARTIAL
+  DELIVERED
+  CANCELLED
+}
+
+model DeliveryAlert {
+  id                       String          @id @default(cuid())
+  supplierDeliveryId       String?         @map("supplier_delivery_id")
+  branchDeliveryId         String?         @map("branch_delivery_id")
+  deliveryType             String
+  alertType                AlertType
+  message                  String
+  isResolved               Boolean         @default(false)
+  resolvedAt               DateTime?
+  createdAt                DateTime        @default(now())
+  organizationId           String
+  
+  supplierDelivery         SupplierDelivery?    @relation(fields: [supplierDeliveryId], references: [id], map: "fk_supplier_delivery_alert")
+  branchDelivery           InterBranchDelivery? @relation(fields: [branchDeliveryId], references: [id], map: "fk_branch_delivery_alert")
+  organization             Organization         @relation(fields: [organizationId], references: [id])
+  
+  @@unique([supplierDeliveryId])
+  @@unique([branchDeliveryId])
+}
+
+enum AlertType {
+  DELAYED
+  EXPECTED_TODAY
+  EXPECTED_TOMORROW
+  AT_RISK
+  CANCELLED
+}
+
+model DeliveryCalendar {
+  id               String          @id @default(cuid())
+  deliveryId       String
+  deliveryType     String
+  scheduledDate    DateTime
+  status           DeliveryStatus
+  organizationId   String
+  createdAt        DateTime        @default(now())
+  
+  organization     Organization    @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== COST OPTIMIZATION MODELS ====================
+
+model PriceTrend {
+  id             String   @id @default(cuid())
+  itemId         String
+  supplierId     String
+  currentPrice   Float
+  previousPrice  Float
+  priceChange    Float
+  changePercent  Float
+  trendDirection String   // UP, DOWN, STABLE
+  predictedPrice Float?
+  confidence     Float
+  analysisDate   DateTime @default(now())
+  organizationId String
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  supplier     Supplier      @relation(fields: [supplierId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model DemandForecast {
+  id             String   @id @default(cuid())
+  itemId         String
+  branchId       String?
+  forecastPeriod String   // WEEK, MONTH, QUARTER
+  forecastDate   DateTime
+  predictedDemand Float
+  lowerBound     Float
+  upperBound     Float
+  confidence     Float
+  factors        Json?    // seasonality, trends, events
+  createdAt      DateTime @default(now())
+  organizationId String
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model StockoutRisk {
+  id             String   @id @default(cuid())
+  itemId         String
+  branchId       String?
+  riskLevel      String   // LOW, MEDIUM, HIGH, CRITICAL
+  riskScore      Float
+  currentStock   Float
+  daysUntilStockout Int?
+  reason         String
+  recommendation String
+  isResolved     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+  organizationId String
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model WastageRecord {
+  id             String   @id @default(cuid())
+  itemId         String
+  branchId       String?
+  quantity       Float
+  cost           Float
+  reason         String   // SPOILAGE, DAMAGE, THEFT, EXPIRY, OVERPRODUCTION
+  notes          String?
+  recordedBy     String
+  recordedAt     DateTime @default(now())
+  organizationId String
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model BulkOrderSaving {
+  id             String   @id @default(cuid())
+  itemId         String
+  supplierId     String
+  unitPrice      Float
+  bulkQuantity   Int
+  bulkPrice      Float
+  savingsPerUnit Float
+  totalSavings   Float
+  recommended    Boolean  @default(false)
+  validUntil     DateTime?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  supplier     Supplier      @relation(fields: [supplierId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model SpendingAnomaly {
+  id             String   @id @default(cuid())
+  itemId         String
+  supplierId     String?
+  periodStart    DateTime
+  periodEnd      DateTime
+  expectedAmount Float
+  actualAmount   Float
+  variance       Float
+  variancePercent Float
+  severity       String   // LOW, MEDIUM, HIGH
+  reason         String?
+  isReviewed     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  organizationId String
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  supplier     Supplier?     @relation(fields: [supplierId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== SUSTAINABILITY MODELS ====================
+
+model CO2Emission {
+  id                       String   @id @default(cuid())
+  supplierDeliveryId       String?  @map("supplier_delivery_id")
+  branchDeliveryId         String?  @map("branch_delivery_id")
+  deliveryType             String   // supplier or branch
+  distanceKm               Float
+  vehicleType              String   // truck, van, car, motorcycle
+  fuelType                 String   // diesel, petrol, electric
+  co2Emitted               Float    // in kg CO2
+  calculationMethod        String
+  organizationId           String
+  createdAt                DateTime @default(now())
+  
+  supplierDelivery         SupplierDelivery?     @relation(fields: [supplierDeliveryId], references: [id], map: "fk_co2_supplier_delivery")
+  branchDelivery           InterBranchDelivery?  @relation(fields: [branchDeliveryId], references: [id], map: "fk_co2_branch_delivery")
+  organization             Organization         @relation(fields: [organizationId], references: [id])
+  
+  @@unique([supplierDeliveryId])
+  @@unique([branchDeliveryId])
+}
+
+model LocalSupplierScore {
+  id             String   @id @default(cuid())
+  supplierId     String
+  distanceKm     Float
+  score          Float    // 0-100, higher is better
+  isLocal        Boolean
+  region         String?
+  benefits       Json?    // economic, environmental benefits
+  organizationId String
+  calculatedAt   DateTime @default(now())
+  
+  supplier     Supplier     @relation(fields: [supplierId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  
+  @@unique([supplierId])
+}
+
+model PackagingWaste {
+  id             String   @id @default(cuid())
+  itemId         String
+  quantity       Float
+  materialType   String   // plastic, glass, paper, cardboard, metal
+  weightKg       Float
+  isRecyclable   Boolean
+  isReusable     Boolean
+  organizationId String
+  recordedAt     DateTime @default(now())
+  
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
+model WasteReductionSuggestion {
+  id             String   @id @default(cuid())
+  suggestion     String
+  category       String   // packaging, food_waste, energy, water
+  estimatedSavings Float
+  implementationCost Float
+  difficulty     String   // easy, medium, hard
+  impact         String   // low, medium, high
+  status         String   @default("PENDING")
+  organizationId String
+  createdAt      DateTime @default(now())
+  implementedAt  DateTime?
+  
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== HEALTHCARE MODELS ====================
+
+model MedicalInventory {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  barcode        String?
+  description    String?
+  category       String   // medication, equipment, consumable, vaccine
+  manufacturer   String?
+  supplierId     String
+  currentStock   Float
+  minimumStock   Float
+  maximumStock   Float
+  reorderPoint   Float
+  costPrice      Float
+  sellingPrice   Float
+  batchNumber    String?
+  expiryDate     DateTime
+  requiresRefrigeration Boolean @default(false)
+  isControlled   Boolean  @default(false)
+  prescriptionRequired Boolean @default(false)
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  coldChainLogs  ColdChainLog[]
+  expiryAlerts   ExpiryAlert[]
+  emergencyReorders EmergencyReorder[]
+}
+
+model ColdChainLog {
+  id             String   @id @default(cuid())
+  medicalItemId  String
+  temperature    Float
+  humidity       Float?
+  location       String
+  status         String
+  recordedBy     String
+  recordedAt     DateTime @default(now())
+  organizationId String
+  
+  medicalItem    MedicalInventory @relation(fields: [medicalItemId], references: [id])
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+}
+
+model ExpiryAlert {
+  id             String   @id @default(cuid())
+  medicalItemId  String
+  batchNumber    String
+  expiryDate     DateTime
+  daysUntilExpiry Int
+  severity       String
+  status         String   @default("PENDING")
+  notifiedAt     DateTime?
+  resolvedAt     DateTime?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  medicalItem    MedicalInventory @relation(fields: [medicalItemId], references: [id])
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+}
+
+model EmergencyReorder {
+  id             String   @id @default(cuid())
+  medicalItemId  String
+  requestNumber  String   @unique
+  quantity       Float
+  urgency        String
+  reason         String
+  status         String   @default("PENDING")
+  approvedBy     String?
+  approvedAt     DateTime?
+  purchaseOrderId String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  medicalItem    MedicalInventory @relation(fields: [medicalItemId], references: [id])
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== EDUCATION MODELS ====================
+
+model BookInventory {
+  id             String   @id @default(cuid())
+  title          String
+  isbn           String   @unique
+  author         String?
+  publisher      String?
+  edition        String?
+  category       String   // textbook, reference, fiction, workbook
+  subject        String?
+  grade          String?  // Grade 1-12, Form 1-4, University Year
+  quantity       Int      @default(0)
+  minimumStock   Int      @default(0)
+  costPrice      Float
+  sellingPrice   Float
+  supplierId     String
+  location       String?  // library, store, classroom
+  condition      String   // new, good, fair, damaged
+  isActive       Boolean  @default(true)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  distributions  BookDistribution[]
+}
+
+model BookDistribution {
+  id             String   @id @default(cuid())
+  bookId         String
+  studentId      String?
+  teacherId      String?
+  quantity       Int
+  issueDate      DateTime @default(now())
+  returnDate     DateTime?
+  status         String   // issued, returned, lost, damaged
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  book           BookInventory @relation(fields: [bookId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model StationeryItem {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  category       String   // writing, paper, art, office, laboratory
+  quantity       Int      @default(0)
+  minimumStock   Int      @default(0)
+  unitPrice      Float
+  supplierId     String
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model UniformItem {
+  id             String   @id @default(cuid())
+  name           String
+  code           String   @unique
+  category       String   // shirt, trouser, dress, sweater, tie, shoe
+  size           String   // S, M, L, XL, XXL, or numeric
+  gender         String?  // male, female, unisex
+  quantity       Int      @default(0)
+  minimumStock   Int      @default(0)
+  costPrice      Float
+  sellingPrice   Float
+  supplierId     String
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model CafeteriaSupply {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  category       String   // food, beverage, condiment, utensil
+  unit           String   // kg, L, pieces, box
+  currentStock   Float    @default(0)
+  minimumStock   Float    @default(0)
+  reorderPoint   Float    @default(0)
+  unitPrice      Float
+  supplierId     String
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  consumption    MealConsumption[]
+}
+
+model MealConsumption {
+  id             String   @id @default(cuid())
+  supplyId       String
+  date           DateTime @default(now())
+  quantity       Float
+  mealType       String   // breakfast, lunch, dinner, snack
+  studentCount   Int
+  staffCount     Int
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  supply         CafeteriaSupply @relation(fields: [supplyId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+}
+
+model HostelSupply {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  category       String   // bedding, furniture, cleaning, amenities
+  unit           String
+  currentStock   Float    @default(0)
+  minimumStock   Float    @default(0)
+  reorderPoint   Float    @default(0)
+  unitPrice      Float
+  supplierId     String
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  allocations    RoomAllocation[]
+}
+
+model RoomAllocation {
+  id             String   @id @default(cuid())
+  supplyId       String
+  roomNumber     String
+  hostelName     String
+  quantity       Int
+  allocatedDate  DateTime @default(now())
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  supply         HostelSupply @relation(fields: [supplyId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== RETAIL MODELS ====================
+
+model RetailProduct {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  barcode        String?
+  description    String?
+  category       String   // electronics, clothing, groceries, hardware, beauty, sports
+  subcategory    String?
+  brand          String?
+  size           String?
+  color          String?
+  weight         Float?
+  currentStock   Int      @default(0)
+  minimumStock   Int      @default(0)
+  maximumStock   Int      @default(0)
+  reorderPoint   Int      @default(0)
+  costPrice      Float
+  sellingPrice   Float
+  taxRate        Float    @default(16)
+  supplierId     String
+  location       String?  // aisle, shelf, bin
+  imageUrl       String?
+  isActive       Boolean  @default(true)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  branchStock    RetailBranchStock[]
+  sales          RetailSale[]
+  transfers      RetailTransfer[]
+  reorderEngines ReorderEngine[]
+}
+
+model RetailBranchStock {
+  id             String   @id @default(cuid())
+  productId      String
+  branchId       String
+  quantity       Int      @default(0)
+  reservedStock  Int      @default(0)
+  availableStock Int      @default(0)
+  updatedAt      DateTime @updatedAt
+  
+  product        RetailProduct @relation(fields: [productId], references: [id])
+  branch         Branch        @relation(fields: [branchId], references: [id])
+  
+  @@unique([productId, branchId])
+}
+
+model RetailSale {
+  id             String   @id @default(cuid())
+  saleNumber     String   @unique
+  productId      String
+  branchId       String
+  quantity       Int
+  unitPrice      Float
+  totalPrice     Float
+  discount       Float    @default(0)
+  finalPrice     Float
+  paymentMethod  String   // cash, card, mpesa, bank
+  customerName   String?
+  customerPhone  String?
+  saleDate       DateTime @default(now())
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  product        RetailProduct   @relation(fields: [productId], references: [id])
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  loyaltyTransaction LoyaltyTransaction?
+}
+
+model RetailTransfer {
+  id             String   @id @default(cuid())
+  transferNumber String   @unique
+  fromBranchId   String
+  toBranchId     String
+  productId      String
+  quantity       Int
+  status         String   // pending, approved, shipped, received, cancelled
+  requestedBy    String
+  approvedBy     String?
+  notes          String?
+  organizationId String
+  requestedAt    DateTime @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  fromBranch     Branch        @relation("FromBranchTransfer", fields: [fromBranchId], references: [id])
+  toBranch       Branch        @relation("ToBranchTransfer", fields: [toBranchId], references: [id])
+  product        RetailProduct @relation(fields: [productId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model ReorderEngine {
+  id             String   @id @default(cuid())
+  productId      String
+  branchId       String?
+  currentStock   Int
+  reorderPoint   Int
+  suggestedQty   Int
+  daysOfStock    Int
+  urgency        String   // low, medium, high, critical
+  status         String   @default("PENDING")
+  createdAt      DateTime @default(now())
+  processedAt    DateTime?
+  organizationId String
+  
+  product        RetailProduct @relation(fields: [productId], references: [id])
+  branch         Branch?       @relation(fields: [branchId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model Promotion {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  type           String   // percentage, fixed, buy_x_get_y
+  value          Float
+  startDate      DateTime
+  endDate        DateTime
+  applicableProducts Json?   // array of product IDs or categories
+  isActive       Boolean  @default(true)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model LoyaltyCustomer {
+  id             String   @id @default(cuid())
+  name           String
+  phone          String
+  email          String?
+  points         Int      @default(0)
+  totalSpent     Float    @default(0)
+  tier           String   @default("bronze") // bronze, silver, gold, platinum
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  transactions   LoyaltyTransaction[]
+}
+
+model LoyaltyTransaction {
+  id             String   @id @default(cuid())
+  customerId     String
+  saleId         String?
+  points         Int
+  type           String   // earned, redeemed, expired
+  description    String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  customer       LoyaltyCustomer @relation(fields: [customerId], references: [id])
+  sale           RetailSale?     @relation(fields: [saleId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  
+  @@unique([saleId])
+}
+
+// ==================== MANUFACTURING MODELS ====================
+
+model RawMaterial {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  barcode        String?
+  description    String?
+  category       String   // raw, packaging, chemical, component
+  unit           String   // kg, L, pieces, meters, tons
+  currentStock   Float    @default(0)
+  minimumStock   Float    @default(0)
+  maximumStock   Float    @default(0)
+  reorderPoint   Float    @default(0)
+  unitCost       Float
+  supplierId     String
+  storageLocation String? // warehouse, silo, tank, cold storage
+  qualityGrade   String?  // A, B, C, premium, standard
+  expiryDate     DateTime?
+  isHazardous    Boolean  @default(false)
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  supplier       Supplier      @relation(fields: [supplierId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  productionInputs ProductionInput[]
+  stockMovements RawMaterialMovement[]
+  branchStock    RawMaterialBranchStock[]
+}
+
+model RawMaterialMovement {
+  id             String   @id @default(cuid())
+  materialId     String
+  branchId       String?
+  quantity       Float
+  type           String   // RECEIVED, ISSUED_TO_PRODUCTION, RETURNED, ADJUSTED, WASTED
+  reference      String?  // PO number, work order number
+  previousStock  Float
+  newStock       Float
+  notes          String?
+  createdBy      String
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  material       RawMaterial   @relation(fields: [materialId], references: [id])
+  branch         Branch?       @relation(fields: [branchId], references: [id])
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+}
+
+model RawMaterialBranchStock {
+  id             String   @id @default(cuid())
+  materialId     String
+  branchId       String
+  quantity       Float    @default(0)
+  reservedStock  Float    @default(0)
+  availableStock Float    @default(0)
+  updatedAt      DateTime @updatedAt
+  
+  material       RawMaterial @relation(fields: [materialId], references: [id])
+  branch         Branch      @relation(fields: [branchId], references: [id])
+  
+  @@unique([materialId, branchId])
+}
+
+model ProductionInput {
+  id             String   @id @default(cuid())
+  workOrderId    String
+  materialId     String
+  quantityUsed   Float
+  unitCost       Float
+  totalCost      Float
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  material       RawMaterial @relation(fields: [materialId], references: [id])
+  workOrder      WorkOrder   @relation(fields: [workOrderId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model WorkOrder {
+  id             String   @id @default(cuid())
+  orderNumber    String   @unique
+  productName    String   // finished goods name
+  productCode    String
+  quantity       Int
+  completedQty   Int      @default(0)
+  rejectedQty    Int      @default(0)
+  status         String   // draft, approved, in_progress, completed, cancelled
+  priority       String   // low, medium, high, urgent
+  startDate      DateTime
+  dueDate        DateTime
+  completedDate  DateTime?
+  assignedTo     String?  // production line / team
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  inputs         ProductionInput[]
+  outputs        FinishedGoodsOutput[]
+}
+
+model FinishedGoodsOutput {
+  id             String   @id @default(cuid())
+  workOrderId    String
+  quantity       Int
+  batchNumber    String
+  qualityStatus  String   // passed, failed, rework
+  inspectionNotes String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  workOrder      WorkOrder @relation(fields: [workOrderId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model FinishedGoods {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  barcode        String?
+  description    String?
+  category       String
+  unit           String
+  currentStock   Int      @default(0)
+  minimumStock   Int      @default(0)
+  maximumStock   Int      @default(0)
+  reorderPoint   Int      @default(0)
+  productionCost Float    // cost to manufacture
+  sellingPrice   Float
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  branchStock    FinishedGoodsBranchStock[]
+  dispatchItems  DispatchItem[]
+}
+
+model FinishedGoodsBranchStock {
+  id             String   @id @default(cuid())
+  productId      String
+  branchId       String
+  quantity       Int      @default(0)
+  reservedStock  Int      @default(0)
+  availableStock Int      @default(0)
+  updatedAt      DateTime @updatedAt
+  
+  product        FinishedGoods @relation(fields: [productId], references: [id])
+  branch         Branch        @relation(fields: [branchId], references: [id])
+  
+  @@unique([productId, branchId])
+}
+
+model Dispatch {
+  id             String   @id @default(cuid())
+  dispatchNumber String   @unique
+  customerName   String
+  customerPhone  String?
+  customerEmail  String?
+  deliveryAddress String?
+  dispatchDate   DateTime @default(now())
+  status         String   // pending, loaded, in_transit, delivered, cancelled
+  vehicleNumber  String?
+  driverName     String?
+  driverPhone    String?
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  items          DispatchItem[]
+}
+
+model DispatchItem {
+  id             String   @id @default(cuid())
+  dispatchId     String
+  productId      String
+  quantity       Int
+  unitPrice      Float
+  totalPrice     Float
+  batchNumber    String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  dispatch       Dispatch       @relation(fields: [dispatchId], references: [id])
+  product        FinishedGoods  @relation(fields: [productId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+}
+
+// ==================== LOGISTICS & TRANSPORT MODELS ====================
+
+// Fleet Management - Vehicles
+model Vehicle {
+  id             String   @id @default(cuid())
+  registration   String   @unique
+  type           String   // matatu, bus, truck, van, lorry, motorcycle
+  model          String
+  manufacturer   String
+  year           Int
+  capacity       Int      // passenger or cargo capacity
+  fuelType       String   // diesel, petrol, electric, hybrid
+  status         String   // active, maintenance, retired, accident
+  currentMileage Int      @default(0)
+  insuranceExpiry DateTime?
+  inspectionExpiry DateTime?
+  routeId        String?
+  assignedDriver String?
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  route          TransportRoute? @relation(fields: [routeId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  fuelLogs       FuelLog[]
+  maintenance    MaintenanceRecord[]
+  trips          Trip[]
+  
+  // Add these missing relations
+  schedules      Schedule[]        // Opposite of Schedule.vehicle
+  assignments    DriverAssignment[] // Opposite of DriverAssignment.vehicle
+  fuelEfficiencies FuelEfficiency[] // Opposite of FuelEfficiency.vehicle
+}
+
+model TransportRoute {
+  id             String   @id @default(cuid())
+  name           String   // e.g., "Ruiru - Nairobi CBD"
+  code           String   @unique
+  startPoint     String
+  endPoint       String
+  distanceKm     Float
+  estimatedTime  Int      // minutes
+  stops          Json?    // Array of stop points
+  fare           Float    // base fare
+  farePerKm      Float?
+  organizationId String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  vehicles       Vehicle[]
+  schedules      Schedule[]
+  trips          Trip[]
+  
+  // Add these missing relations
+  assignments    DriverAssignment[] // Opposite of DriverAssignment.route
+  trafficData    TrafficData[]     // Opposite of TrafficData.route
+}
+
+// Schedules (Matatu Schedule)
+model Schedule {
+  id             String   @id @default(cuid())
+  routeId        String
+  vehicleId      String
+  departureTime  String   // "06:00:00"
+  arrivalTime    String   // "07:30:00"
+  daysOfWeek     String   // "1,2,3,4,5,6,7" or custom
+  isActive       Boolean  @default(true)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  route          TransportRoute @relation(fields: [routeId], references: [id])
+  vehicle        Vehicle        @relation(fields: [vehicleId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+}
+
+// Driver Management
+model Driver {
+  id             String   @id @default(cuid())
+  name           String
+  licenseNumber  String   @unique
+  licenseClass   String   // B, C, D, E, PSV
+  phone          String
+  email          String?
+  address        String?
+  hireDate       DateTime
+  status         String   // active, on_leave, suspended, terminated
+  rating         Float    @default(0)
+  totalTrips     Int      @default(0)
+  accidents      Int      @default(0)
+  salary         Float?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  assignments    DriverAssignment[]
+  trips          Trip[]
+  fuelLogs       FuelLog[]
+}
+
+// Driver Assignment to Vehicle/Route
+model DriverAssignment {
+  id             String   @id @default(cuid())
+  driverId       String
+  vehicleId      String
+  routeId        String?
+  assignedDate   DateTime @default(now())
+  endDate        DateTime?
+  shift          String   // morning, afternoon, night, full
+  status         String   @default("active")
+  organizationId String
+  
+  driver         Driver         @relation(fields: [driverId], references: [id])
+  vehicle        Vehicle        @relation(fields: [vehicleId], references: [id])
+  route          TransportRoute? @relation(fields: [routeId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+}
+
+// Trips/Manifest
+model Trip {
+  id             String   @id @default(cuid())
+  tripNumber     String   @unique
+  vehicleId      String
+  driverId       String
+  routeId        String
+  conductorName  String?  // for matatu
+  passengerCount Int      @default(0)
+  revenue        Float    @default(0)
+  distance       Float
+  startTime      DateTime
+  endTime        DateTime?
+  status         String   // scheduled, in_progress, completed, cancelled
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  vehicle        Vehicle        @relation(fields: [vehicleId], references: [id])
+  driver         Driver         @relation(fields: [driverId], references: [id])
+  route          TransportRoute @relation(fields: [routeId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  payments       TripPayment[]
+}
+
+// Trip Payments (Revenue per trip)
+model TripPayment {
+  id             String   @id @default(cuid())
+  tripId         String
+  amount         Float
+  paymentMethod  String   // cash, mpesa, card, saccos
+  transactionRef String?
+  collectedBy    String
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  trip           Trip         @relation(fields: [tripId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// Fuel Tracking
+model FuelLog {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  driverId       String?
+  date           DateTime @default(now())
+  liters         Float
+  costPerLiter   Float
+  totalCost      Float
+  odometer       Int
+  fuelType       String   // diesel, petrol
+  station        String?
+  receiptNumber  String?
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id])
+  driver         Driver?      @relation(fields: [driverId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// Fuel Efficiency Tracking
+model FuelEfficiency {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  periodStart    DateTime
+  periodEnd      DateTime
+  totalFuel      Float
+  totalDistance  Int
+  efficiency     Float    // km per liter
+  costPerKm      Float
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  
+  @@unique([vehicleId, periodStart])
+}
+
+// Maintenance Records
+model MaintenanceRecord {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  maintenanceDate DateTime
+  type           String   // routine, repair, emergency, service
+  description    String
+  cost           Float
+  odometer       Int
+  mechanic       String?
+  nextDueDate    DateTime?
+  nextDueOdometer Int?
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// Route Optimization - Traffic Data
+model TrafficData {
+  id             String   @id @default(cuid())
+  routeId        String
+  dayOfWeek      Int      // 1-7 (Monday-Sunday)
+  hourOfDay      Int      // 0-23
+  typicalDuration Int     // minutes
+  congestionLevel String  // low, medium, high, severe
+  averageSpeed   Float    // km/h
+  organizationId String
+  recordedAt     DateTime @default(now())
+  
+  route          TransportRoute @relation(fields: [routeId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  
+  @@unique([routeId, dayOfWeek, hourOfDay])
+}
