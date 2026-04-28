@@ -317,7 +317,6 @@ const predictStockoutRisk = async (req, res) => {
     const risks = [];
     
     for (const item of organization.inventoryItems) {
-      // Calculate daily usage rate
       let avgDailyUsage = 1;
       if (item.movements.length > 0) {
         const totalUsage = item.movements.reduce((sum, m) => sum + m.quantity, 0);
@@ -354,32 +353,41 @@ const predictStockoutRisk = async (req, res) => {
       }
       
       if (daysUntilStockout <= 10) {
-        const risk = await prisma.stockoutRisk.upsert({
+        // Check if risk already exists
+        const existingRisk = await prisma.stockoutRisk.findFirst({
           where: {
-            itemId_branchId: {
-              itemId: item.id,
-              branchId: null
-            }
-          },
-          update: {
-            riskLevel,
-            riskScore,
-            currentStock: item.currentStock,
-            daysUntilStockout,
-            recommendation,
-            isResolved: false
-          },
-          create: {
             itemId: item.id,
-            riskLevel,
-            riskScore,
-            currentStock: item.currentStock,
-            daysUntilStockout,
-            reason: `Current stock (${item.currentStock}) will last approximately ${daysUntilStockout} days at current usage rate`,
-            recommendation,
-            organizationId: organization.id
+            branchId: null
           }
         });
+        
+        let risk;
+        if (existingRisk) {
+          risk = await prisma.stockoutRisk.update({
+            where: { id: existingRisk.id },
+            data: {
+              riskLevel,
+              riskScore,
+              currentStock: item.currentStock,
+              daysUntilStockout,
+              recommendation,
+              isResolved: false
+            }
+          });
+        } else {
+          risk = await prisma.stockoutRisk.create({
+            data: {
+              itemId: item.id,
+              riskLevel,
+              riskScore,
+              currentStock: item.currentStock,
+              daysUntilStockout,
+              reason: `Current stock (${item.currentStock}) will last approximately ${daysUntilStockout} days at current usage rate`,
+              recommendation,
+              organizationId: organization.id
+            }
+          });
+        }
         
         risks.push({
           item: item.name,
@@ -393,7 +401,6 @@ const predictStockoutRisk = async (req, res) => {
       }
     }
     
-    // Sort by risk score descending
     risks.sort((a, b) => b.riskScore - a.riskScore);
     
     res.json({
