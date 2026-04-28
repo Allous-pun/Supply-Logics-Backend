@@ -2,9 +2,30 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const generateSupplierCode = async (organizationId) => {
+  // Count only suppliers for THIS organization
   const count = await prisma.supplier.count({
-    where: { organizationId }
+    where: { organizationId: organizationId }
   });
+  
+  // Get the highest code number for this organization
+  const lastSupplier = await prisma.supplier.findFirst({
+    where: { organizationId: organizationId },
+    orderBy: { code: 'desc' },
+    select: { code: true }
+  });
+  
+  if (!lastSupplier) {
+    return 'SUP-0001';
+  }
+  
+  // Extract number from existing code
+  const match = lastSupplier.code.match(/SUP-(\d+)/);
+  if (match) {
+    const nextNum = parseInt(match[1]) + 1;
+    return `SUP-${String(nextNum).padStart(4, '0')}`;
+  }
+  
+  // Fallback to count method
   return `SUP-${String(count + 1).padStart(4, '0')}`;
 };
 
@@ -23,18 +44,39 @@ const createSupplier = async (req, res) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
     
-    const code = await generateSupplierCode(organization.id);
+    // Generate unique code for this organization
+    let code;
+    let isUnique = false;
+    let attempts = 0;
+    
+    while (!isUnique && attempts < 10) {
+      code = await generateSupplierCode(organization.id);
+      const existing = await prisma.supplier.findFirst({
+        where: { 
+          code: code,
+          organizationId: organization.id 
+        }
+      });
+      if (!existing) {
+        isUnique = true;
+      }
+      attempts++;
+    }
+    
+    if (!isUnique) {
+      return res.status(500).json({ error: 'Unable to generate unique supplier code' });
+    }
     
     const supplier = await prisma.supplier.create({
       data: {
         name,
         code,
-        contactPerson,
-        email,
-        phone,
-        address,
-        taxId,
-        paymentTerms,
+        contactPerson: contactPerson || null,
+        email: email || null,
+        phone: phone || null,
+        address: address || null,
+        taxId: taxId || null,
+        paymentTerms: paymentTerms || null,
         leadTime: leadTime ? parseInt(leadTime) : null,
         rating: rating || 0,
         organizationId: organization.id
@@ -43,6 +85,7 @@ const createSupplier = async (req, res) => {
     
     res.status(201).json(supplier);
   } catch (error) {
+    console.error('Create supplier error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -182,6 +225,10 @@ const recordPriceChange = async (req, res) => {
       where: { orgCode }
     });
     
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
     const priceHistory = await prisma.supplierPriceHistory.create({
       data: {
         supplierId,
@@ -242,10 +289,14 @@ const calculateSupplierPerformance = async (req, res) => {
       where: { orgCode }
     });
     
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
     const orders = await prisma.purchaseOrder.findMany({
       where: {
         supplierId,
-        organization: { orgCode },
+        organizationId: organization.id,
         orderDate: {
           gte: new Date(periodStart),
           lte: new Date(periodEnd)
