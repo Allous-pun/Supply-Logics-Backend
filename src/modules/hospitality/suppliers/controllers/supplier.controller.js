@@ -44,27 +44,24 @@ const createSupplier = async (req, res) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
     
-    // Generate unique code for this organization
+    // Generate unique code for THIS organization only
+    let lastSupplier = await prisma.supplier.findFirst({
+      where: { organizationId: organization.id },
+      orderBy: { code: 'desc' },
+      select: { code: true }
+    });
+    
     let code;
-    let isUnique = false;
-    let attempts = 0;
-    
-    while (!isUnique && attempts < 10) {
-      code = await generateSupplierCode(organization.id);
-      const existing = await prisma.supplier.findFirst({
-        where: { 
-          code: code,
-          organizationId: organization.id 
-        }
-      });
-      if (!existing) {
-        isUnique = true;
+    if (!lastSupplier) {
+      code = 'SUP-0001';
+    } else {
+      const match = lastSupplier.code.match(/SUP-(\d+)/);
+      if (match) {
+        const nextNum = parseInt(match[1]) + 1;
+        code = `SUP-${String(nextNum).padStart(4, '0')}`;
+      } else {
+        code = 'SUP-0001';
       }
-      attempts++;
-    }
-    
-    if (!isUnique) {
-      return res.status(500).json({ error: 'Unable to generate unique supplier code' });
     }
     
     const supplier = await prisma.supplier.create({
