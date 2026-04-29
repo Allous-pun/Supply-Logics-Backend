@@ -2,12 +2,10 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const generateSupplierCode = async (organizationId) => {
-  // Count only suppliers for THIS organization
   const count = await prisma.supplier.count({
     where: { organizationId: organizationId }
   });
   
-  // Get the highest code number for this organization
   const lastSupplier = await prisma.supplier.findFirst({
     where: { organizationId: organizationId },
     orderBy: { code: 'desc' },
@@ -18,14 +16,12 @@ const generateSupplierCode = async (organizationId) => {
     return 'SUP-0001';
   }
   
-  // Extract number from existing code
   const match = lastSupplier.code.match(/SUP-(\d+)/);
   if (match) {
     const nextNum = parseInt(match[1]) + 1;
     return `SUP-${String(nextNum).padStart(4, '0')}`;
   }
   
-  // Fallback to count method
   return `SUP-${String(count + 1).padStart(4, '0')}`;
 };
 
@@ -44,7 +40,6 @@ const createSupplier = async (req, res) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
     
-    // Generate unique code for THIS organization only
     let lastSupplier = await prisma.supplier.findFirst({
       where: { organizationId: organization.id },
       orderBy: { code: 'desc' },
@@ -147,6 +142,9 @@ const getSupplierById = async (req, res) => {
           orderBy: { periodStart: 'desc' }
         },
         orderHistory: {
+          include: {
+            purchaseOrder: true
+          },
           orderBy: { orderDate: 'desc' },
           take: 20
         }
@@ -238,7 +236,6 @@ const recordPriceChange = async (req, res) => {
       }
     });
     
-    // Update item's cost price if needed
     if (newPrice) {
       await prisma.inventoryItem.update({
         where: { id: itemId },
@@ -309,7 +306,6 @@ const calculateSupplierPerformance = async (req, res) => {
     
     const onTimeRate = totalDeliveries > 0 ? (onTimeDeliveries / totalDeliveries) * 100 : 0;
     
-    // Calculate average lead time
     const leadTimes = orders.filter(o => o.deliveryDate).map(o => {
       const diff = o.deliveryDate.getTime() - o.orderDate.getTime();
       return diff / (1000 * 60 * 60 * 24);
@@ -383,55 +379,86 @@ const compareSuppliers = async (req, res) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
     
-    // Get all suppliers that supply this item or any item in same category
-    const item = await prisma.inventoryItem.findUnique({
-      where: { id: itemId },
-      include: { category: true }
-    });
+    let suppliers;
     
-    if (!item) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
-    
-    const suppliers = await prisma.supplier.findMany({
-      where: {
-        organizationId: organization.id,
-        isActive: true
-      },
-      include: {
-        items: {
-          where: {
-            OR: [
-              { id: itemId },
-              { categoryId: item.categoryId }
-            ]
-          }
-        },
-        performance: {
-          orderBy: { periodStart: 'desc' },
-          take: 1
-        }
+    if (itemId) {
+      const item = await prisma.inventoryItem.findUnique({
+        where: { id: itemId },
+        include: { category: true }
+      });
+      
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found' });
       }
-    });
-    
-    const comparison = suppliers.map(supplier => ({
-      id: supplier.id,
-      name: supplier.name,
-      rating: supplier.rating,
-      leadTime: supplier.leadTime,
-      paymentTerms: supplier.paymentTerms,
-      onTimeRate: supplier.performance[0]?.onTimeRate || 0,
-      suppliesItem: supplier.items.some(i => i.id === itemId),
-      lastPerformance: supplier.performance[0]
-    }));
-    
-    // Sort by rating and on-time rate
-    comparison.sort((a, b) => {
-      if (a.suppliesItem !== b.suppliesItem) return a.suppliesItem ? -1 : 1;
-      return (b.rating + b.onTimeRate) - (a.rating + a.onTimeRate);
-    });
-    
-    res.json(comparison);
+      
+      suppliers = await prisma.supplier.findMany({
+        where: {
+          organizationId: organization.id,
+          isActive: true
+        },
+        include: {
+          items: {
+            where: {
+              OR: [
+                { id: itemId },
+                { categoryId: item.categoryId }
+              ]
+            }
+          },
+          performance: {
+            orderBy: { periodStart: 'desc' },
+            take: 1
+          }
+        }
+      });
+      
+      const comparison = suppliers.map(supplier => ({
+        id: supplier.id,
+        name: supplier.name,
+        rating: supplier.rating,
+        leadTime: supplier.leadTime,
+        paymentTerms: supplier.paymentTerms,
+        onTimeRate: supplier.performance[0]?.onTimeRate || 0,
+        suppliesItem: supplier.items.some(i => i.id === itemId),
+        lastPerformance: supplier.performance[0]
+      }));
+      
+      comparison.sort((a, b) => {
+        if (a.suppliesItem !== b.suppliesItem) return a.suppliesItem ? -1 : 1;
+        return (b.rating + b.onTimeRate) - (a.rating + a.onTimeRate);
+      });
+      
+      return res.json(comparison);
+    } else {
+      // Compare all suppliers without item filter
+      suppliers = await prisma.supplier.findMany({
+        where: {
+          organizationId: organization.id,
+          isActive: true
+        },
+        include: {
+          performance: {
+            orderBy: { periodStart: 'desc' },
+            take: 1
+          }
+        }
+      });
+      
+      const comparison = suppliers.map(supplier => ({
+        id: supplier.id,
+        name: supplier.name,
+        rating: supplier.rating,
+        leadTime: supplier.leadTime,
+        paymentTerms: supplier.paymentTerms,
+        onTimeRate: supplier.performance[0]?.onTimeRate || 0,
+        suppliesItem: true,
+        lastPerformance: supplier.performance[0]
+      }));
+      
+      comparison.sort((a, b) => (b.rating + b.onTimeRate) - (a.rating + a.onTimeRate));
+      
+      return res.json(comparison);
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -453,12 +480,25 @@ const getSupplierScorecard = async (req, res) => {
           take: 3
         },
         orderHistory: {
+          include: {
+            purchaseOrder: true
+          },
           orderBy: { orderDate: 'desc' },
           take: 10
         },
         priceHistory: {
+          include: {
+            item: true
+          },
           take: 5,
           orderBy: { effectiveDate: 'desc' }
+        },
+        purchaseOrders: {
+          where: {
+            status: 'DELIVERED'
+          },
+          orderBy: { orderDate: 'desc' },
+          take: 20
         }
       }
     });
@@ -467,7 +507,6 @@ const getSupplierScorecard = async (req, res) => {
       return res.status(404).json({ error: 'Supplier not found' });
     }
     
-    // Calculate scorecard metrics
     const recentPerformance = supplier.performance[0];
     const totalSpent = supplier.orderHistory.reduce((sum, order) => sum + order.totalAmount, 0);
     const lateOrders = supplier.orderHistory.filter(o => o.lateDays > 0).length;
@@ -491,7 +530,14 @@ const getSupplierScorecard = async (req, res) => {
         qualityRating: recentPerformance?.qualityRating || 0
       },
       recentPerformance: recentPerformance,
-      recentOrders: supplier.orderHistory,
+      recentOrders: supplier.orderHistory.map(order => ({
+        poNumber: order.purchaseOrder?.poNumber,
+        orderDate: order.orderDate,
+        deliveryDate: order.deliveryDate,
+        totalAmount: order.totalAmount,
+        status: order.status,
+        lateDays: order.lateDays
+      })),
       priceChanges: supplier.priceHistory
     };
     
@@ -502,19 +548,15 @@ const getSupplierScorecard = async (req, res) => {
 };
 
 module.exports = {
-  // Base CRUD
   createSupplier,
   getSuppliers,
   getSupplierById,
   updateSupplier,
   deleteSupplier,
-  // Price History
   recordPriceChange,
   getPriceHistory,
-  // Performance
   calculateSupplierPerformance,
   getSupplierPerformance,
-  // Comparison
   compareSuppliers,
   getSupplierScorecard
 };

@@ -142,7 +142,7 @@ const approvePurchaseRequest = async (req, res) => {
 
 const createPurchaseOrder = async (req, res) => {
   try {
-    const { supplierId, requestId, expectedDate, items, notes } = req.body;
+    const { supplierId, requestId, expectedDate, deliveryDate, tax, discount, items, notes } = req.body;
     const orgCode = req.headers['x-org-code'];
     const userId = req.user.userId;
     
@@ -161,7 +161,9 @@ const createPurchaseOrder = async (req, res) => {
     for (const item of items) {
       subtotal += item.quantity * item.unitPrice;
     }
-    const total = subtotal;
+    const taxAmount = subtotal * (tax / 100);
+    const discountAmount = subtotal * (discount / 100);
+    const total = subtotal + taxAmount - discountAmount;
     
     const purchaseOrder = await prisma.purchaseOrder.create({
       data: {
@@ -169,14 +171,29 @@ const createPurchaseOrder = async (req, res) => {
         supplierId,
         requestId,
         expectedDate: new Date(expectedDate),
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
         items,
         subtotal,
+        tax: tax || 0,
+        discount: discount || 0,
         total,
         notes,
         organizationId: organization.id
       },
       include: {
         supplier: true
+      }
+    });
+    
+    // Create Supplier Order History record
+    await prisma.supplierOrderHistory.create({
+      data: {
+        supplierId,
+        poId: purchaseOrder.id,
+        orderDate: new Date(),
+        totalAmount: total,
+        status: purchaseOrder.status,
+        organizationId: organization.id
       }
     });
     
@@ -190,6 +207,7 @@ const createPurchaseOrder = async (req, res) => {
     
     res.status(201).json(purchaseOrder);
   } catch (error) {
+    console.error('Create PO error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -260,6 +278,28 @@ const updateOrderStatus = async (req, res) => {
       data: { status }
     });
     
+    // Update order history with delivery date and late days if status is DELIVERED
+    if (status === 'DELIVERED') {
+      const deliveryDate = new Date();
+      const lateDays = deliveryDate > order.expectedDate 
+        ? Math.ceil((deliveryDate - order.expectedDate) / (1000 * 60 * 60 * 24))
+        : 0;
+      
+      await prisma.supplierOrderHistory.updateMany({
+        where: { poId: id },
+        data: {
+          deliveryDate,
+          lateDays: lateDays > 0 ? lateDays : null,
+          status
+        }
+      });
+    } else {
+      await prisma.supplierOrderHistory.updateMany({
+        where: { poId: id },
+        data: { status }
+      });
+    }
+    
     res.json({
       message: `Order status updated to ${status}`,
       order
@@ -317,8 +357,8 @@ const createGoodsReceipt = async (req, res) => {
             quantity: item.acceptedQuantity,
             type: 'RECEIVE',
             reference: grnNumber,
-            previousStock: 0, // Will be updated by trigger
-            newStock: 0,
+            previousStock: 0,
+            newStock: item.acceptedQuantity,
             notes: `GRN: ${grnNumber} for PO: ${poId}`,
             createdBy: userId,
             organizationId: organization.id
@@ -334,11 +374,26 @@ const createGoodsReceipt = async (req, res) => {
     let poStatus = 'DELIVERED';
     if (partialAccepted) poStatus = 'PARTIAL';
     
-    await prisma.purchaseOrder.update({
+    const updatedOrder = await prisma.purchaseOrder.update({
       where: { id: poId },
       data: {
         status: poStatus,
         deliveryDate: new Date()
+      }
+    });
+    
+    // Update order history
+    const deliveryDate = new Date();
+    const lateDays = deliveryDate > updatedOrder.expectedDate 
+      ? Math.ceil((deliveryDate - updatedOrder.expectedDate) / (1000 * 60 * 60 * 24))
+      : 0;
+    
+    await prisma.supplierOrderHistory.updateMany({
+      where: { poId },
+      data: {
+        deliveryDate,
+        lateDays: lateDays > 0 ? lateDays : null,
+        status: poStatus
       }
     });
     
@@ -408,7 +463,7 @@ const getReorderSuggestions = async (req, res) => {
     const suggestions = [];
     for (const item of lowStockItems) {
       const shortage = item.reorderPoint - item.currentStock;
-      const suggestedQty = Math.ceil(shortage * 1.2); // 20% buffer
+      const suggestedQty = Math.ceil(shortage * 1.2);
       
       suggestions.push({
         itemId: item.id,
