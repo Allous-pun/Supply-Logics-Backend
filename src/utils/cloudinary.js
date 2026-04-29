@@ -1,9 +1,10 @@
+// src/utils/cloudinary.js
 const { v2: cloudinary } = require('cloudinary');
 
 cloudinary.config({
-  cloud_name: 'dcyp5aihp',
-  api_key: '468746196187498',
-  api_secret: 'mFHc8z_lR1ekWws4mWWMRV_N0Tc'
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 const uploadImage = async (imagePath, folder = 'bizstack') => {
