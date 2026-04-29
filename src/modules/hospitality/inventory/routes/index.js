@@ -16,6 +16,7 @@ const {
   receiveStock,
   issueStock,
   adjustStock,
+  getMovements,  // ADDED
   // Alerts
   getLowStockAlerts,
   resolveAlert,
@@ -45,6 +46,7 @@ router.delete('/items/:id', deleteItem);
 router.post('/movements/receive', receiveStock);
 router.post('/movements/issue', issueStock);
 router.post('/movements/adjust', adjustStock);
+router.get('/movements', getMovements);  // ADDED - GET endpoint for movements
 
 // Alerts
 router.get('/alerts/low-stock', getLowStockAlerts);

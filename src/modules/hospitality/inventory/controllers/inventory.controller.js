@@ -507,6 +507,54 @@ const adjustStock = async (req, res) => {
   }
 };
 
+// ==================== GET MOVEMENTS (NEW) ====================
+
+const getMovements = async (req, res) => {
+  try {
+    const orgCode = req.headers['x-org-code'];
+    const { itemId } = req.query;
+    
+    const organization = await prisma.organization.findUnique({
+      where: { orgCode }
+    });
+    
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    let whereClause = { organizationId: organization.id };
+    if (itemId) {
+      whereClause.itemId = itemId;
+    }
+    
+    const movements = await prisma.stockMovement.findMany({
+      where: whereClause,
+      include: {
+        item: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            unit: true
+          }
+        },
+        branch: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+    
+    res.json(movements);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // ==================== LOW STOCK ALERTS ====================
 
 const getLowStockAlerts = async (req, res) => {
@@ -616,6 +664,7 @@ module.exports = {
   receiveStock,
   issueStock,
   adjustStock,
+  getMovements,  // ADDED
   // Alerts
   getLowStockAlerts,
   resolveAlert,
