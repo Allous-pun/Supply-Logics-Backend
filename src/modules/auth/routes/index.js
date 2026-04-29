@@ -6,9 +6,9 @@ const validateOrgCode = require('../../../middlewares/orgCode.middleware');
 
 // Public routes
 router.post('/register-owner', registerOwner);
-router.post('/login', login);
+router.post('/login', login);  // No validateOrgCode middleware
 
 // Protected routes
-router.get('/profile', validateOrgCode, authenticate, getProfile);
+router.get('/profile', authenticate, getProfile);  // No validateOrgCode needed, token has orgCode
 
 module.exports = router;

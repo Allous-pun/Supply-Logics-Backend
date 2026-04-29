@@ -110,7 +110,7 @@ const registerOwner = async (req, res) => {
         role: ownerRole.name,
         roleKey: ownerRole.key
       },
-      loginCode, // Return plain code once
+      loginCode,
       token
     });
   } catch (error) {
@@ -122,16 +122,15 @@ const registerOwner = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { loginCode } = req.body;
-    const orgCode = req.headers['x-org-code'];
     
-    if (!orgCode || !loginCode) {
-      return res.status(400).json({ error: 'Organization code and login code are required' });
+    if (!loginCode) {
+      return res.status(400).json({ error: 'Login code is required' });
     }
     
-    // Find user with matching orgCode and loginCode
-    const users = await prisma.user.findMany({
-      where: { orgCode },
+    // Find ALL users (search across all organizations)
+    const allUsers = await prisma.user.findMany({
       include: {
+        organization: true,
         userRoles: {
           include: {
             role: {
@@ -148,24 +147,51 @@ const login = async (req, res) => {
       }
     });
     
-    let foundUser = null;
-    for (const user of users) {
+    // Find users with matching login code
+    const matchingUsers = [];
+    for (const user of allUsers) {
       const isValid = await bcrypt.compare(loginCode, user.loginCode);
       if (isValid) {
-        foundUser = user;
-        break;
+        matchingUsers.push(user);
       }
     }
     
-    if (!foundUser) {
+    if (matchingUsers.length === 0) {
       return res.status(401).json({ error: 'Invalid login code' });
+    }
+    
+    // Handle multiple users with same login code
+    let foundUser = matchingUsers[0];
+    
+    if (matchingUsers.length > 1) {
+      // Additional logic for multiple matches:
+      // 1. Check if any user has been active recently
+      const sortedByLastLogin = [...matchingUsers].sort((a, b) => {
+        if (!a.lastLoginAt) return 1;
+        if (!b.lastLoginAt) return -1;
+        return b.lastLoginAt.getTime() - a.lastLoginAt.getTime();
+      });
+      
+      // 2. Prefer the most recently active user
+      if (sortedByLastLogin[0]?.lastLoginAt) {
+        foundUser = sortedByLastLogin[0];
+      } else {
+        // 3. If no recent activity, return error asking for additional info
+        const orgNames = matchingUsers.map(u => u.organization?.name).filter(Boolean);
+        return res.status(409).json({
+          error: 'Multiple organizations found with this login code',
+          message: 'Please select your organization',
+          organizations: orgNames,
+          userIds: matchingUsers.map(u => u.id)
+        });
+      }
     }
     
     if (!foundUser.isActive) {
       return res.status(401).json({ error: 'Account is deactivated' });
     }
     
-    // Only update last login, DO NOT change login code
+    // Update last login
     await prisma.user.update({
       where: { id: foundUser.id },
       data: { lastLoginAt: new Date() }
@@ -207,7 +233,7 @@ const login = async (req, res) => {
 const getProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const orgCode = req.headers['x-org-code'];
+    const orgCode = req.user.orgCode;
     
     const user = await prisma.user.findFirst({
       where: {
