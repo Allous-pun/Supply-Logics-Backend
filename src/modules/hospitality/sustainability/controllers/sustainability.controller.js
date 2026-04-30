@@ -45,15 +45,22 @@ const calculateCO2Emission = async (req, res) => {
     };
     
     let savedEmission = null;
+    let isUpdate = false;
     
     // Try to link to an existing delivery if deliveryId provided
     if (deliveryId && (deliveryType === 'supplier' || deliveryType === 'branch')) {
+      let existingEmission = null;
+      
       if (deliveryType === 'supplier') {
         const deliveryExists = await prisma.supplierDelivery.findUnique({
           where: { id: deliveryId }
         });
         if (deliveryExists) {
           data.supplierDeliveryId = deliveryId;
+          // Check if emission already exists for this delivery
+          existingEmission = await prisma.cO2Emission.findUnique({
+            where: { supplierDeliveryId: deliveryId }
+          });
         }
       } else if (deliveryType === 'branch') {
         const deliveryExists = await prisma.interBranchDelivery.findUnique({
@@ -61,12 +68,34 @@ const calculateCO2Emission = async (req, res) => {
         });
         if (deliveryExists) {
           data.branchDeliveryId = deliveryId;
+          // Check if emission already exists for this delivery
+          existingEmission = await prisma.cO2Emission.findUnique({
+            where: { branchDeliveryId: deliveryId }
+          });
         }
       }
+      
+      // If emission exists, update it instead of creating new
+      if (existingEmission) {
+        savedEmission = await prisma.cO2Emission.update({
+          where: { id: existingEmission.id },
+          data: {
+            distanceKm,
+            vehicleType,
+            fuelType,
+            co2Emitted,
+            calculationMethod: 'Distance × Emission Factor (Updated)'
+          }
+        });
+        isUpdate = true;
+      } else {
+        // Create new emission record
+        savedEmission = await prisma.cO2Emission.create({ data });
+      }
+    } else {
+      // No delivery ID, just create a manual record
+      savedEmission = await prisma.cO2Emission.create({ data });
     }
-    
-    // Save the emission record
-    savedEmission = await prisma.cO2Emission.create({ data });
     
     const result = {
       id: savedEmission.id,
@@ -78,11 +107,12 @@ const calculateCO2Emission = async (req, res) => {
       co2Emitted: co2Emitted.toFixed(2),
       kgCO2: `${co2Emitted.toFixed(2)} kg`,
       equivalentTrees: (co2Emitted / 22).toFixed(1),
-      recommendation: co2Emitted > 100 ? 'Consider consolidating shipments' : 'Carbon footprint is within acceptable range'
+      recommendation: co2Emitted > 100 ? 'Consider consolidating shipments' : 'Carbon footprint is within acceptable range',
+      isUpdate
     };
     
-    res.status(201).json({
-      message: 'CO2 emission calculated and saved',
+    res.status(isUpdate ? 200 : 201).json({
+      message: isUpdate ? 'CO2 emission updated successfully' : 'CO2 emission calculated and saved',
       emission: result
     });
   } catch (error) {
