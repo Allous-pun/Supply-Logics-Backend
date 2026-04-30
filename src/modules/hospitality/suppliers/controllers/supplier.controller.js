@@ -112,12 +112,19 @@ const getSuppliers = async (req, res) => {
         performance: {
           orderBy: { periodStart: 'desc' },
           take: 1
-        }
+        },
+        localSupplierScores: true  // Add this to include local supplier scores
       },
       orderBy: { name: 'asc' }
     });
     
-    res.json(suppliers);
+    // Format the response to include local score in a cleaner way
+    const formattedSuppliers = suppliers.map(supplier => ({
+      ...supplier,
+      localSupplierScore: supplier.localSupplierScores?.[0] || null
+    }));
+    
+    res.json(formattedSuppliers);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -147,7 +154,8 @@ const getSupplierById = async (req, res) => {
           },
           orderBy: { orderDate: 'desc' },
           take: 20
-        }
+        },
+        localSupplierScores: true  // Add this
       }
     });
     
@@ -155,7 +163,13 @@ const getSupplierById = async (req, res) => {
       return res.status(404).json({ error: 'Supplier not found' });
     }
     
-    res.json(supplier);
+    // Format the response
+    const formattedSupplier = {
+      ...supplier,
+      localSupplierScore: supplier.localSupplierScores?.[0] || null
+    };
+    
+    res.json(formattedSupplier);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -408,7 +422,8 @@ const compareSuppliers = async (req, res) => {
           performance: {
             orderBy: { periodStart: 'desc' },
             take: 1
-          }
+          },
+          localSupplierScores: true  // Add this for comparison
         }
       });
       
@@ -420,7 +435,8 @@ const compareSuppliers = async (req, res) => {
         paymentTerms: supplier.paymentTerms,
         onTimeRate: supplier.performance[0]?.onTimeRate || 0,
         suppliesItem: supplier.items.some(i => i.id === itemId),
-        lastPerformance: supplier.performance[0]
+        lastPerformance: supplier.performance[0],
+        localSupplierScore: supplier.localSupplierScores?.[0] || null
       }));
       
       comparison.sort((a, b) => {
@@ -440,7 +456,8 @@ const compareSuppliers = async (req, res) => {
           performance: {
             orderBy: { periodStart: 'desc' },
             take: 1
-          }
+          },
+          localSupplierScores: true  // Add this for comparison
         }
       });
       
@@ -452,7 +469,8 @@ const compareSuppliers = async (req, res) => {
         paymentTerms: supplier.paymentTerms,
         onTimeRate: supplier.performance[0]?.onTimeRate || 0,
         suppliesItem: true,
-        lastPerformance: supplier.performance[0]
+        lastPerformance: supplier.performance[0],
+        localSupplierScore: supplier.localSupplierScores?.[0] || null
       }));
       
       comparison.sort((a, b) => (b.rating + b.onTimeRate) - (a.rating + a.onTimeRate));
@@ -499,7 +517,8 @@ const getSupplierScorecard = async (req, res) => {
           },
           orderBy: { orderDate: 'desc' },
           take: 20
-        }
+        },
+        localSupplierScores: true  // Add this for scorecard
       }
     });
     
@@ -538,7 +557,8 @@ const getSupplierScorecard = async (req, res) => {
         status: order.status,
         lateDays: order.lateDays
       })),
-      priceChanges: supplier.priceHistory
+      priceChanges: supplier.priceHistory,
+      localSupplierScore: supplier.localSupplierScores?.[0] || null  // Add this
     };
     
     res.json(scorecard);
