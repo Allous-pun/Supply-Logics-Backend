@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { geocodeAddress, calculateDrivingDistance } = require('../../../../utils/geocoding.js');
 
 // CO2 emission factors (kg CO2 per km)
 const EMISSION_FACTORS = {
@@ -168,15 +169,19 @@ const getCO2Emissions = async (req, res) => {
   }
 };
 
-// ==================== LOCAL SUPPLIER SCORING ====================
+// ==================== LOCAL SUPPLIER SCORING WITH REAL DISTANCES ====================
 
 const calculateLocalSupplierScore = async (req, res) => {
   try {
     const orgCode = req.headers['x-org-code'];
     
+    // Get organization with coordinates
     const organization = await prisma.organization.findUnique({
       where: { orgCode },
-      include: {
+      select: {
+        id: true,
+        latitude: true,
+        longitude: true,
         suppliers: {
           where: { isActive: true }
         }
@@ -187,66 +192,167 @@ const calculateLocalSupplierScore = async (req, res) => {
       return res.status(404).json({ error: 'Organization not found' });
     }
     
+    // Check if organization has coordinates
+    if (!organization.latitude || !organization.longitude) {
+      return res.status(400).json({ 
+        error: 'Organization location not set. Please update organization address first.',
+        suggestion: 'Use PUT /api/organizations/:id to set city and address'
+      });
+    }
+    
     const results = [];
     
     for (const supplier of organization.suppliers) {
+      let latitude = supplier.latitude;
+      let longitude = supplier.longitude;
+      let region = supplier.region || 'Unknown';
+      let formattedAddress = supplier.address;
       let distanceKm = 0;
       let isLocal = false;
       let score = 0;
-      let region = 'Unknown';
       
-      const address = supplier.address?.toLowerCase() || '';
-      
-      if (address.includes('nairobi')) {
-        distanceKm = 10;
-        isLocal = true;
-        region = 'Nairobi';
-        score = 95;
-      } else if (address.includes('kiambu') || address.includes('thika')) {
-        distanceKm = 30;
-        isLocal = true;
-        region = 'Kiambu';
-        score = 85;
-      } else if (address.includes('mombasa')) {
-        distanceKm = 480;
-        isLocal = false;
-        region = 'Mombasa';
-        score = 40;
-      } else if (address.includes('kisumu')) {
-        distanceKm = 350;
-        isLocal = false;
-        region = 'Kisumu';
-        score = 50;
-      } else {
-        distanceKm = 200;
-        isLocal = false;
-        region = 'Other';
-        score = 30;
+      // If supplier doesn't have coordinates, try to geocode now
+      if (!latitude || !longitude) {
+        const geocodeResult = await geocodeAddress(
+          supplier.address, 
+          supplier.city, 
+          supplier.region, 
+          supplier.country || 'Kenya'
+        );
+        
+        if (geocodeResult) {
+          latitude = geocodeResult.latitude;
+          longitude = geocodeResult.longitude;
+          formattedAddress = geocodeResult.formattedAddress;
+          region = geocodeResult.region || supplier.region || 'Unknown';
+          
+          // Save coordinates to supplier for future use
+          await prisma.supplier.update({
+            where: { id: supplier.id },
+            data: { 
+              latitude, 
+              longitude, 
+              address: formattedAddress,
+              region: region
+            }
+          });
+        }
       }
       
-      score = Math.max(0, Math.min(100, score - (distanceKm / 100) + (supplier.rating / 2)));
+      // Calculate actual driving distance if both have coordinates
+      if (latitude && longitude && organization.latitude && organization.longitude) {
+        const distanceResult = await calculateDrivingDistance(
+          organization.latitude, organization.longitude,
+          latitude, longitude
+        );
+        
+        if (distanceResult) {
+          distanceKm = distanceResult.distanceKm;
+          
+          // Determine if local (within 100km)
+          isLocal = distanceKm <= 100;
+          
+          // Calculate score based on real distance and rating
+          // Base score: 100 - (distance penalty)
+          let distancePenalty = Math.min(70, distanceKm / 10);
+          let ratingBonus = (supplier.rating / 5) * 30;
+          
+          score = Math.max(0, Math.min(100, 100 - distancePenalty + ratingBonus));
+          
+          // Additional bonus for truly local suppliers (under 50km)
+          if (distanceKm <= 50) {
+            score = Math.min(100, score + 10);
+          }
+        } else {
+          // Fallback to address-based estimation if OSRM fails
+          const address = supplier.address?.toLowerCase() || '';
+          if (address.includes('nairobi')) {
+            distanceKm = 10;
+            isLocal = true;
+            region = 'Nairobi';
+            score = 95;
+          } else if (address.includes('kiambu') || address.includes('thika')) {
+            distanceKm = 30;
+            isLocal = true;
+            region = 'Kiambu';
+            score = 85;
+          } else if (address.includes('mombasa')) {
+            distanceKm = 480;
+            isLocal = false;
+            region = 'Mombasa';
+            score = 40;
+          } else if (address.includes('kisumu')) {
+            distanceKm = 350;
+            isLocal = false;
+            region = 'Kisumu';
+            score = 50;
+          } else {
+            distanceKm = 200;
+            isLocal = false;
+            region = 'Other';
+            score = 30;
+          }
+          
+          score = Math.max(0, Math.min(100, score - (distanceKm / 100) + (supplier.rating / 2)));
+        }
+      } else {
+        // Fallback for suppliers without coordinates - use address parsing
+        const address = supplier.address?.toLowerCase() || '';
+        if (address.includes('nairobi')) {
+          distanceKm = 10;
+          isLocal = true;
+          region = 'Nairobi';
+          score = 95;
+        } else if (address.includes('kiambu') || address.includes('thika')) {
+          distanceKm = 30;
+          isLocal = true;
+          region = 'Kiambu';
+          score = 85;
+        } else if (address.includes('mombasa')) {
+          distanceKm = 480;
+          isLocal = false;
+          region = 'Mombasa';
+          score = 40;
+        } else if (address.includes('kisumu')) {
+          distanceKm = 350;
+          isLocal = false;
+          region = 'Kisumu';
+          score = 50;
+        } else {
+          distanceKm = 200;
+          isLocal = false;
+          region = 'Other';
+          score = 30;
+        }
+        
+        score = Math.max(0, Math.min(100, score - (distanceKm / 100) + (supplier.rating / 2)));
+      }
       
       const co2SavedPerDelivery = isLocal ? (distanceKm * 0.28 * 2) : 0;
       
       const benefits = {
         economic: isLocal ? 'Supports local economy, reduces transport costs' : 'May offer competitive pricing',
-        environmental: isLocal ? `Saves approximately ${co2SavedPerDelivery.toFixed(0)} kg CO2 per delivery` : 'Higher carbon footprint due to transport',
+        environmental: isLocal 
+          ? `Saves approximately ${co2SavedPerDelivery.toFixed(0)} kg CO2 per delivery` 
+          : 'Higher carbon footprint due to long-distance transport',
         social: isLocal ? 'Creates local jobs' : 'Expands market reach'
       };
       
+      // Save or update the score
       await prisma.localSupplierScore.upsert({
         where: { supplierId: supplier.id },
         update: {
-          distanceKm,
-          score,
+          distanceKm: Math.round(distanceKm),
+          score: Math.round(score),
           isLocal,
           region,
-          benefits
+          benefits,
+          calculatedAt: new Date()
         },
         create: {
           supplierId: supplier.id,
-          distanceKm,
-          score,
+          distanceKm: Math.round(distanceKm),
+          score: Math.round(score),
           isLocal,
           region,
           benefits,
@@ -258,7 +364,7 @@ const calculateLocalSupplierScore = async (req, res) => {
         id: supplier.id,
         name: supplier.name,
         code: supplier.code,
-        distanceKm,
+        distanceKm: Math.round(distanceKm),
         score: Math.round(score),
         isLocal,
         region,
@@ -272,14 +378,23 @@ const calculateLocalSupplierScore = async (req, res) => {
     
     const localSuppliers = results.filter(r => r.isLocal);
     const nonLocalSuppliers = results.filter(r => !r.isLocal);
+    const averageScore = results.length > 0 
+      ? (results.reduce((s, r) => s + r.score, 0) / results.length).toFixed(1) 
+      : 0;
+    
+    const totalPotentialCO2Savings = nonLocalSuppliers.reduce((sum, s) => {
+      // Estimate potential savings if they switched to local supplier
+      const estimatedSaving = s.distanceKm * 0.28 * 2;
+      return sum + estimatedSaving;
+    }, 0);
     
     res.json({
       summary: {
         totalSuppliers: results.length,
         localSuppliers: localSuppliers.length,
         nonLocalSuppliers: nonLocalSuppliers.length,
-        averageScore: results.length > 0 ? (results.reduce((s, r) => s + r.score, 0) / results.length).toFixed(1) : 0,
-        potentialCO2Savings: nonLocalSuppliers.reduce((sum, s) => sum + (s.distanceKm * 0.28 * 2), 0).toFixed(0)
+        averageScore: parseFloat(averageScore),
+        potentialCO2Savings: Math.round(totalPotentialCO2Savings)
       },
       localSuppliers,
       nonLocalSuppliers,
@@ -287,7 +402,7 @@ const calculateLocalSupplierScore = async (req, res) => {
         supplier: s.name,
         currentLocation: s.region,
         distanceKm: s.distanceKm,
-        suggestion: `Consider finding a local alternative for ${s.name} to reduce carbon footprint by approximately ${(s.distanceKm * 0.28 * 2).toFixed(0)} kg CO2 per delivery`
+        suggestion: `Consider finding a local alternative for ${s.name} to reduce carbon footprint by approximately ${Math.round(s.distanceKm * 0.28 * 2)} kg CO2 per delivery`
       }))
     });
   } catch (error) {
@@ -699,14 +814,6 @@ const getSustainabilityDashboard = async (req, res) => {
     const packagingWastes = await prisma.packagingWaste.findMany({
       where: { organizationId: organization.id },
       orderBy: { recordedAt: 'desc' }
-    });
-    
-    const wasteThisMonth = await prisma.packagingWaste.aggregate({
-      where: {
-        organizationId: organization.id,
-        recordedAt: { gte: thisMonth }
-      },
-      _sum: { weightKg: true }
     });
     
     const localScores = await prisma.localSupplierScore.findMany({

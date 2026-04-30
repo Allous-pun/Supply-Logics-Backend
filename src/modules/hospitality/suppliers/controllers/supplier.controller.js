@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { geocodeAddress } = require('../../../../utils/geocoding.js');
 
 const generateSupplierCode = async (organizationId) => {
   const count = await prisma.supplier.count({
@@ -29,7 +30,11 @@ const generateSupplierCode = async (organizationId) => {
 
 const createSupplier = async (req, res) => {
   try {
-    const { name, contactPerson, email, phone, address, taxId, paymentTerms, leadTime, rating } = req.body;
+    const { 
+      name, contactPerson, email, phone, address, 
+      taxId, paymentTerms, leadTime, rating,
+      city, region, country, postalCode
+    } = req.body;
     const orgCode = req.headers['x-org-code'];
     
     const organization = await prisma.organization.findUnique({
@@ -59,6 +64,20 @@ const createSupplier = async (req, res) => {
       }
     }
     
+    // Geocode address if provided
+    let latitude = null;
+    let longitude = null;
+    let formattedAddress = address;
+    
+    if (address || city) {
+      const geocodeResult = await geocodeAddress(address, city, region, country || 'Kenya');
+      if (geocodeResult) {
+        latitude = geocodeResult.latitude;
+        longitude = geocodeResult.longitude;
+        formattedAddress = geocodeResult.formattedAddress;
+      }
+    }
+    
     const supplier = await prisma.supplier.create({
       data: {
         name,
@@ -66,11 +85,17 @@ const createSupplier = async (req, res) => {
         contactPerson: contactPerson || null,
         email: email || null,
         phone: phone || null,
-        address: address || null,
+        address: formattedAddress,
         taxId: taxId || null,
         paymentTerms: paymentTerms || null,
         leadTime: leadTime ? parseInt(leadTime) : null,
         rating: rating || 0,
+        city: city || null,
+        region: region || null,
+        country: country || 'Kenya',
+        postalCode: postalCode || null,
+        latitude,
+        longitude,
         organizationId: organization.id
       }
     });
@@ -113,7 +138,7 @@ const getSuppliers = async (req, res) => {
           orderBy: { periodStart: 'desc' },
           take: 1
         },
-        localSupplierScores: true  // Add this to include local supplier scores
+        localSupplierScores: true
       },
       orderBy: { name: 'asc' }
     });
@@ -155,7 +180,7 @@ const getSupplierById = async (req, res) => {
           orderBy: { orderDate: 'desc' },
           take: 20
         },
-        localSupplierScores: true  // Add this
+        localSupplierScores: true
       }
     });
     
@@ -178,26 +203,51 @@ const getSupplierById = async (req, res) => {
 const updateSupplier = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, contactPerson, email, phone, address, taxId, paymentTerms, leadTime, rating, isActive } = req.body;
+    const { 
+      name, contactPerson, email, phone, address, 
+      taxId, paymentTerms, leadTime, rating, isActive,
+      city, region, country, postalCode
+    } = req.body;
+    
+    const updateData = {
+      name,
+      contactPerson,
+      email,
+      phone,
+      taxId,
+      paymentTerms,
+      leadTime: leadTime ? parseInt(leadTime) : null,
+      rating,
+      isActive,
+      city,
+      region,
+      country,
+      postalCode
+    };
+    
+    // If address changed, geocode it automatically
+    if (address || city) {
+      const geocodeResult = await geocodeAddress(address, city, region, country || 'Kenya');
+      if (geocodeResult) {
+        updateData.latitude = geocodeResult.latitude;
+        updateData.longitude = geocodeResult.longitude;
+        updateData.address = geocodeResult.formattedAddress;
+      } else {
+        updateData.address = address;
+      }
+    }
+    
+    // Remove undefined values
+    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
     
     const supplier = await prisma.supplier.update({
       where: { id },
-      data: {
-        name,
-        contactPerson,
-        email,
-        phone,
-        address,
-        taxId,
-        paymentTerms,
-        leadTime: leadTime ? parseInt(leadTime) : null,
-        rating,
-        isActive
-      }
+      data: updateData
     });
     
     res.json(supplier);
   } catch (error) {
+    console.error('Update supplier error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -423,7 +473,7 @@ const compareSuppliers = async (req, res) => {
             orderBy: { periodStart: 'desc' },
             take: 1
           },
-          localSupplierScores: true  // Add this for comparison
+          localSupplierScores: true
         }
       });
       
@@ -436,7 +486,11 @@ const compareSuppliers = async (req, res) => {
         onTimeRate: supplier.performance[0]?.onTimeRate || 0,
         suppliesItem: supplier.items.some(i => i.id === itemId),
         lastPerformance: supplier.performance[0],
-        localSupplierScore: supplier.localSupplierScores?.[0] || null
+        localSupplierScore: supplier.localSupplierScores?.[0] || null,
+        city: supplier.city,
+        region: supplier.region,
+        latitude: supplier.latitude,
+        longitude: supplier.longitude
       }));
       
       comparison.sort((a, b) => {
@@ -446,7 +500,6 @@ const compareSuppliers = async (req, res) => {
       
       return res.json(comparison);
     } else {
-      // Compare all suppliers without item filter
       suppliers = await prisma.supplier.findMany({
         where: {
           organizationId: organization.id,
@@ -457,7 +510,7 @@ const compareSuppliers = async (req, res) => {
             orderBy: { periodStart: 'desc' },
             take: 1
           },
-          localSupplierScores: true  // Add this for comparison
+          localSupplierScores: true
         }
       });
       
@@ -470,7 +523,11 @@ const compareSuppliers = async (req, res) => {
         onTimeRate: supplier.performance[0]?.onTimeRate || 0,
         suppliesItem: true,
         lastPerformance: supplier.performance[0],
-        localSupplierScore: supplier.localSupplierScores?.[0] || null
+        localSupplierScore: supplier.localSupplierScores?.[0] || null,
+        city: supplier.city,
+        region: supplier.region,
+        latitude: supplier.latitude,
+        longitude: supplier.longitude
       }));
       
       comparison.sort((a, b) => (b.rating + b.onTimeRate) - (a.rating + a.onTimeRate));
@@ -518,7 +575,7 @@ const getSupplierScorecard = async (req, res) => {
           orderBy: { orderDate: 'desc' },
           take: 20
         },
-        localSupplierScores: true  // Add this for scorecard
+        localSupplierScores: true
       }
     });
     
@@ -538,7 +595,11 @@ const getSupplierScorecard = async (req, res) => {
         id: supplier.id,
         name: supplier.name,
         rating: supplier.rating,
-        leadTime: supplier.leadTime
+        leadTime: supplier.leadTime,
+        city: supplier.city,
+        region: supplier.region,
+        latitude: supplier.latitude,
+        longitude: supplier.longitude
       },
       metrics: {
         totalOrders: supplier.orderHistory.length,
@@ -558,11 +619,90 @@ const getSupplierScorecard = async (req, res) => {
         lateDays: order.lateDays
       })),
       priceChanges: supplier.priceHistory,
-      localSupplierScore: supplier.localSupplierScores?.[0] || null  // Add this
+      localSupplierScore: supplier.localSupplierScores?.[0] || null
     };
     
     res.json(scorecard);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get supplier location only
+const getSupplierLocation = async (req, res) => {
+  try {
+    const { supplierId } = req.params;
+    
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: supplierId },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        city: true,
+        region: true,
+        country: true,
+        postalCode: true,
+        latitude: true,
+        longitude: true
+      }
+    });
+    
+    if (!supplier) {
+      return res.status(404).json({ error: 'Supplier not found' });
+    }
+    
+    res.json(supplier);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update supplier location only (with auto-geocoding)
+const updateSupplierLocation = async (req, res) => {
+  try {
+    const { supplierId } = req.params;
+    const { address, city, region, country, postalCode } = req.body;
+    
+    const updateData = {};
+    if (address !== undefined) updateData.address = address;
+    if (city !== undefined) updateData.city = city;
+    if (region !== undefined) updateData.region = region;
+    if (country !== undefined) updateData.country = country;
+    if (postalCode !== undefined) updateData.postalCode = postalCode;
+    
+    // Auto-geocode when location is updated
+    if (address || city) {
+      const geocodeResult = await geocodeAddress(address, city, region, country || 'Kenya');
+      if (geocodeResult) {
+        updateData.latitude = geocodeResult.latitude;
+        updateData.longitude = geocodeResult.longitude;
+        updateData.address = geocodeResult.formattedAddress;
+      }
+    }
+    
+    const supplier = await prisma.supplier.update({
+      where: { id: supplierId },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        city: true,
+        region: true,
+        country: true,
+        postalCode: true,
+        latitude: true,
+        longitude: true
+      }
+    });
+    
+    res.json({
+      message: 'Supplier location updated successfully with geocoding',
+      location: supplier
+    });
+  } catch (error) {
+    console.error('Update supplier location error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -578,5 +718,7 @@ module.exports = {
   calculateSupplierPerformance,
   getSupplierPerformance,
   compareSuppliers,
-  getSupplierScorecard
+  getSupplierScorecard,
+  getSupplierLocation,
+  updateSupplierLocation
 };

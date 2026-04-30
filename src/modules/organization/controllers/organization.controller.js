@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { geocodeAddress } = require('../../../utils/geocoding.js');
 
 const generateOrgCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -8,7 +9,10 @@ const generateOrgCode = () => {
 // Create organization (first step - no auth needed)
 const createOrganization = async (req, res) => {
   try {
-    const { name, email, phone, industryKey } = req.body;
+    const { 
+      name, email, phone, industryKey, 
+      address, city, region, country, postalCode 
+    } = req.body;
     
     if (!name || !email || !industryKey) {
       return res.status(400).json({ error: 'Name, email, and industryKey are required' });
@@ -35,6 +39,20 @@ const createOrganization = async (req, res) => {
       return res.status(400).json({ error: 'Organization name already taken' });
     }
     
+    // Geocode address if provided
+    let latitude = null;
+    let longitude = null;
+    let formattedAddress = address;
+    
+    if (address || city) {
+      const geocodeResult = await geocodeAddress(address, city, region, country || 'Kenya');
+      if (geocodeResult) {
+        latitude = geocodeResult.latitude;
+        longitude = geocodeResult.longitude;
+        formattedAddress = geocodeResult.formattedAddress;
+      }
+    }
+    
     const organization = await prisma.organization.create({
       data: {
         name,
@@ -42,7 +60,14 @@ const createOrganization = async (req, res) => {
         email,
         phone,
         orgCode,
-        industryId: industry.id
+        industryId: industry.id,
+        address: formattedAddress,
+        city,
+        region,
+        country: country || 'Kenya',
+        postalCode,
+        latitude,
+        longitude
       },
       include: {
         industry: {
@@ -87,7 +112,13 @@ const createOrganization = async (req, res) => {
         id: organization.id,
         name: organization.name,
         orgCode: organization.orgCode,
-        industry: organization.industry
+        industry: organization.industry,
+        address: organization.address,
+        city: organization.city,
+        region: organization.region,
+        country: organization.country,
+        latitude: organization.latitude,
+        longitude: organization.longitude
       },
       enabledModules: coreModules.length
     });
@@ -235,13 +266,36 @@ const getMyOrganization = async (req, res) => {
 const updateOrganization = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, phone, address, isActive } = req.body;
+    const { 
+      name, email, phone, address, isActive,
+      city, region, country, postalCode
+    } = req.body;
     
-    const updateData = { email, phone, address, isActive };
+    const updateData = { 
+      email, 
+      phone, 
+      isActive,
+      city,
+      region,
+      country,
+      postalCode
+    };
     
     if (name) {
       updateData.name = name;
       updateData.slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    }
+    
+    // If address changed, geocode it automatically
+    if (address || city) {
+      const geocodeResult = await geocodeAddress(address, city, region, country || 'Kenya');
+      if (geocodeResult) {
+        updateData.latitude = geocodeResult.latitude;
+        updateData.longitude = geocodeResult.longitude;
+        updateData.address = geocodeResult.formattedAddress;
+      } else {
+        updateData.address = address;
+      }
     }
     
     const organization = await prisma.organization.update({
@@ -262,6 +316,7 @@ const updateOrganization = async (req, res) => {
       organization
     });
   } catch (error) {
+    console.error('Update organization error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -391,6 +446,93 @@ const toggleModule = async (req, res) => {
   }
 };
 
+// Get organization location (for distance calculations)
+const getOrganizationLocation = async (req, res) => {
+  try {
+    const orgCode = req.headers['x-org-code'];
+    
+    const organization = await prisma.organization.findUnique({
+      where: { orgCode },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        city: true,
+        region: true,
+        country: true,
+        postalCode: true,
+        latitude: true,
+        longitude: true
+      }
+    });
+    
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    res.json(organization);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update organization location (specifically for location)
+const updateOrganizationLocation = async (req, res) => {
+  try {
+    const orgCode = req.headers['x-org-code'];
+    const { address, city, region, country, postalCode } = req.body;
+    
+    const organization = await prisma.organization.findUnique({
+      where: { orgCode }
+    });
+    
+    if (!organization) {
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    const updateData = {};
+    if (address !== undefined) updateData.address = address;
+    if (city !== undefined) updateData.city = city;
+    if (region !== undefined) updateData.region = region;
+    if (country !== undefined) updateData.country = country;
+    if (postalCode !== undefined) updateData.postalCode = postalCode;
+    
+    // Auto-geocode when location is updated
+    if (address || city) {
+      const geocodeResult = await geocodeAddress(address, city, region, country || 'Kenya');
+      if (geocodeResult) {
+        updateData.latitude = geocodeResult.latitude;
+        updateData.longitude = geocodeResult.longitude;
+        updateData.address = geocodeResult.formattedAddress;
+      }
+    }
+    
+    const updated = await prisma.organization.update({
+      where: { id: organization.id },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        city: true,
+        region: true,
+        country: true,
+        postalCode: true,
+        latitude: true,
+        longitude: true
+      }
+    });
+    
+    res.json({
+      message: 'Organization location updated successfully',
+      location: updated
+    });
+  } catch (error) {
+    console.error('Update organization location error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createOrganization,
   getOrganizations,
@@ -399,5 +541,7 @@ module.exports = {
   updateOrganization,
   deleteOrganization,
   getEnabledModules,
-  toggleModule
+  toggleModule,
+  getOrganizationLocation,
+  updateOrganizationLocation
 };

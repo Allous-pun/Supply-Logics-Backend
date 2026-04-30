@@ -49,6 +49,16 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
+  // ==================== LOCATION FIELDS ====================
+  address     String?   // Full street address
+  city        String?   // e.g., "Eldoret", "Nairobi", "Kisumu"
+  region      String?   // e.g., "Uasin Gishu", "Nairobi", "Kisumu"
+  country     String    @default("Kenya")
+  postalCode  String?
+  latitude    Float?    // From geocoding (e.g., OpenStreetMap)
+  longitude   Float?    // From geocoding
+  // ========================================================
+  
   industry            Industry              @relation(fields: [industryId], references: [id])
   settings            OrganizationSettings?
   users               User[]
@@ -332,7 +342,7 @@ model BranchStaff {
 model Supplier {
   id             String   @id @default(cuid())
   name           String
-  code           String   // Remove @unique
+  code           String
   contactPerson  String?
   email          String?
   phone          String?
@@ -345,6 +355,15 @@ model Supplier {
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  
+  // ==================== LOCATION FIELDS ====================
+  city        String?   // e.g., "Thika", "Nairobi", "Mombasa", "Kisumu"
+  region      String?   // e.g., "Kiambu", "Nairobi", "Mombasa", "Kisumu"
+  country     String    @default("Kenya")
+  postalCode  String?
+  latitude    Float?    // From geocoding (e.g., OpenStreetMap)
+  longitude   Float?    // From geocoding
+  // ========================================================
   
   organization   Organization   @relation(fields: [organizationId], references: [id])
   items          InventoryItem[]
@@ -366,7 +385,7 @@ model Supplier {
   retailProducts  RetailProduct[]
   rawMaterials    RawMaterial[]
   
-  @@unique([organizationId, code])  // Compound unique constraint
+  @@unique([organizationId, code])
 }
 
 // ==================== HOSPITALITY INVENTORY MODELS ====================
@@ -924,13 +943,14 @@ model CO2Emission {
 model LocalSupplierScore {
   id             String   @id @default(cuid())
   supplierId     String
-  distanceKm     Float
-  score          Float    // 0-100, higher is better
-  isLocal        Boolean
-  region         String?
-  benefits       Json?    // economic, environmental benefits
+  distanceKm     Float      // Actual driving distance in km (from OSRM)
+  drivingTimeMin Float?     // Estimated driving time in minutes (from OSRM)
+  score          Float      // 0-100, higher is better (calculated based on distance, rating, etc.)
+  isLocal        Boolean    // true if distanceKm <= localThreshold (e.g., 100km)
+  region         String?    // Region determined from address
+  benefits       Json?      // economic, environmental, social benefits
   organizationId String
-  calculatedAt   DateTime @default(now())
+  calculatedAt   DateTime   @default(now())
   
   supplier     Supplier     @relation(fields: [supplierId], references: [id])
   organization Organization @relation(fields: [organizationId], references: [id])

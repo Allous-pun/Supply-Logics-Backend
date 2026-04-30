@@ -11,7 +11,9 @@ const {
   calculateSupplierPerformance,
   getSupplierPerformance,
   compareSuppliers,
-  getSupplierScorecard
+  getSupplierScorecard,
+  getSupplierLocation,
+  updateSupplierLocation
 } = require('../controllers/supplier.controller');
 const { authenticate } = require('../../../../middlewares/auth.middleware');
 const validateOrgCode = require('../../../../middlewares/orgCode.middleware');
@@ -27,6 +29,8 @@ router.post('/performance', calculateSupplierPerformance);
 // ==================== DYNAMIC ROUTES (with :id parameter) - MUST COME LAST ====================
 router.post('/', createSupplier);
 router.get('/', getSuppliers);
+router.get('/:supplierId/location', getSupplierLocation);  // NEW: Get supplier location
+router.put('/:supplierId/location', updateSupplierLocation); // NEW: Update supplier location
 router.get('/:id', getSupplierById);
 router.put('/:id', updateSupplier);
 router.delete('/:id', deleteSupplier);
